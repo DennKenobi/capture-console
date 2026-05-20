@@ -714,6 +714,14 @@ function applyArgsToExistingWindow(windowInstance, args) {
 			}
 		}
 
+		const shouldIgnoreMouseEvents = resolveUnclickableFlag(mergedArgs);
+		mergedArgs.unclickable = shouldIgnoreMouseEvents;
+		mergedArgs.uc = shouldIgnoreMouseEvents;
+		if (shouldIgnoreMouseEvents !== !!windowInstance.mouseEvent) {
+			windowInstance.mouseEvent = shouldIgnoreMouseEvents;
+			setWindowIgnoreMouseEvents(windowInstance, shouldIgnoreMouseEvents, 'applyArgsToExistingWindow');
+		}
+
 	if (typeof mergedArgs.fullscreen === 'boolean') {
 		const currentlyFullScreen = typeof windowInstance.isFullScreen === 'function' ? windowInstance.isFullScreen() : false;
 		if (mergedArgs.fullscreen !== currentlyFullScreen) {
@@ -748,6 +756,59 @@ function applyArgsToExistingWindow(windowInstance, args) {
 	}
 
 	return true;
+}
+
+function coerceBooleanFlag(value) {
+	if (typeof value === 'boolean') {
+		return value;
+	}
+	if (typeof value === 'number' && Number.isFinite(value)) {
+		if (value === 0) {
+			return false;
+		}
+		if (value === 1) {
+			return true;
+		}
+	}
+	if (typeof value === 'string') {
+		const trimmed = value.trim();
+		if (!trimmed.length) {
+			return undefined;
+		}
+		if (/^(false|0|no|off|disable|disabled)$/i.test(trimmed)) {
+			return false;
+		}
+		if (/^(true|1|yes|on|enable|enabled)$/i.test(trimmed)) {
+			return true;
+		}
+	}
+	return undefined;
+}
+
+function resolveUnclickableFlag(args) {
+	if (!args || typeof args !== 'object') {
+		return false;
+	}
+	const canonical = coerceBooleanFlag(args.unclickable);
+	const alias = coerceBooleanFlag(args.uc);
+	if (canonical === true || alias === true) {
+		return true;
+	}
+	if (canonical === false || alias === false) {
+		return false;
+	}
+	return false;
+}
+
+function setWindowIgnoreMouseEvents(windowInstance, ignore, reason) {
+	if (!windowInstance || windowInstance.isDestroyed()) {
+		return;
+	}
+	try {
+		windowInstance.setIgnoreMouseEvents(ignore);
+	} catch (error) {
+		console.warn(`Failed to set ignore mouse events (${reason || 'unknown'}):`, error);
+	}
 }
 
 function isProcessElevated() {
@@ -2298,7 +2359,10 @@ async function createWindow(args, reuse=false) {
     args = createYargs(); // Use default args if invalid
   }
   
-  var URL = args.url, NODE = args.node, WIDTH = args.width, HEIGHT = args.height, TITLE = args.title, PIN = args.pin, X = args.x, Y = args.y, FULLSCREEN = args.fullscreen, UNCLICKABLE = args.uc, MINIMIZED = args.min, CSS = args.css, BGCOLOR = args.chroma, JS = args.js;
+  const UNCLICKABLE = resolveUnclickableFlag(args);
+  args.unclickable = UNCLICKABLE;
+  args.uc = UNCLICKABLE;
+  var URL = args.url, NODE = args.node, WIDTH = args.width, HEIGHT = args.height, TITLE = args.title, PIN = args.pin, X = args.x, Y = args.y, FULLSCREEN = args.fullscreen, MINIMIZED = args.min, CSS = args.css, BGCOLOR = args.chroma, JS = args.js;
   const defaultDragRegionEnabled = (() => {
     if (typeof args.defaultDragRegion === 'boolean') {
       return args.defaultDragRegion;
@@ -2593,7 +2657,8 @@ async function createWindow(args, reuse=false) {
 	
 	if (UNCLICKABLE){
 		mainWindow.mouseEvent = true;
-		mainWindow.setIgnoreMouseEvents(mainWindow.mouseEvent);
+		mainWindow.__preserveClickThroughOnInitialFocus = true;
+		setWindowIgnoreMouseEvents(mainWindow, mainWindow.mouseEvent, 'initial unclickable');
 	}
 	
 	ipcMain.on("vdonVersion", function(eventRet, arg) {  // this enables a PROMPT pop up , which is used to BLOCK the main thread until the user provides input. VDO.Ninja uses prompt for passwords, etc.
@@ -3023,6 +3088,13 @@ async function createWindow(args, reuse=false) {
 		//+ KravchenkoAndrey 08.01.2022
         } else if (UNCLICKABLE){
             mainWindow.showInactive();
+			mainWindow.mouseEvent = true;
+			setWindowIgnoreMouseEvents(mainWindow, true, 'ready-to-show unclickable');
+			setTimeout(() => {
+				if (mainWindow && !mainWindow.isDestroyed()) {
+					mainWindow.__preserveClickThroughOnInitialFocus = false;
+				}
+			}, 1000);
 		//- KravchenkoAndrey 08.01.2022
         } else {
             mainWindow.show();
@@ -4099,13 +4171,14 @@ app.on('second-instance', (event, commandLine, workingDirectory, argv2) => {
         }
     }
 
+	const secondInstanceArgs = argv2 && typeof argv2 === 'object' ? argv2 : {};
     const windowConfig = {
         ...Argv,  // Start with default arguments
-        ...argv2, // Override with new arguments
-        width: argv2.w || argv2.width || Argv.width,
-        height: argv2.h || argv2 || Argv.height,
-        x: typeof argv2.x !== 'undefined' ? argv2.x : Argv.x,
-        y: typeof argv2.y !== 'undefined' ? argv2.y : Argv.y
+        ...secondInstanceArgs, // Override with new arguments
+        width: secondInstanceArgs.w || secondInstanceArgs.width || Argv.width,
+        height: secondInstanceArgs.h || secondInstanceArgs.height || Argv.height,
+        x: typeof secondInstanceArgs.x !== 'undefined' ? secondInstanceArgs.x : Argv.x,
+        y: typeof secondInstanceArgs.y !== 'undefined' ? secondInstanceArgs.y : Argv.y
     };
 
     console.log('Creating window with config:', windowConfig);
@@ -4332,7 +4405,14 @@ app.on('ready', () => {
     
     app.on('browser-window-focus', (event, win) => {
         console.log('browser-window-focus', win.webContents.id);
-        win.setIgnoreMouseEvents(false);
+		if (win.__preserveClickThroughOnInitialFocus && win.mouseEvent) {
+			setWindowIgnoreMouseEvents(win, true, 'initial focus preserve');
+			return;
+		}
+		if (win.mouseEvent) {
+			win.mouseEvent = false;
+		}
+        setWindowIgnoreMouseEvents(win, false, 'browser-window-focus');
     });
     
     if (!isDev) {
