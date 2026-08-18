@@ -1,6 +1,6 @@
 // NDI receive probe — dev/verification tool for the Capture Console fork.
 // Discovers a source by name fragment, pulls frames, reports geometry/fps/liveness.
-//   node capture/ndi-probe.js --name=DND-SLICE [--frames=60] [--json]
+//   node capture/ndi-probe.js --name=CC-SLICE [--frames=60] [--json]
 const grandiose = require('@stagetimerio/grandiose');
 const crypto = require('crypto');
 
@@ -8,7 +8,7 @@ function arg(name, dflt) {
 	const hit = process.argv.find(a => a.startsWith(`--${name}=`));
 	return hit ? hit.split('=').slice(1).join('=') : dflt;
 }
-const NAME = arg('name', 'DND-SLICE');
+const NAME = arg('name', 'CC-SLICE');
 const FRAMES = parseInt(arg('frames', '60'), 10);
 const JSON_OUT = process.argv.includes('--json');
 

@@ -12,7 +12,7 @@ function arg(name, dflt) {
 	return hit ? hit.split('=').slice(1).join('=') : dflt;
 }
 const URL = arg('url', 'https://vdo.ninja/?view=ccsmoke2026a&noaudio');
-const NDI_NAME = arg('ndi-name', 'DND-SLICE');
+const NDI_NAME = arg('ndi-name', 'CC-SLICE');
 const WIDTH = parseInt(arg('width', '1920'), 10);
 const HEIGHT = parseInt(arg('height', '1080'), 10);
 const FPS = parseInt(arg('fps', '30'), 10);
