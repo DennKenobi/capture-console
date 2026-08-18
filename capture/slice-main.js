@@ -62,6 +62,7 @@ app.whenReady().then(async () => {
 
 	let paints = 0, texturePaints = 0, lastLogPaints = 0, lastLogTime = Date.now();
 	let firstPaintLogged = false;
+	let copyNs = 0n, copies = 0;
 
 	win.webContents.on('paint', (event, dirty, image) => {
 		paints++;
@@ -81,7 +82,11 @@ app.whenReady().then(async () => {
 			console.log(`[slice] first paint: ${size.width}x${size.height}`);
 		}
 		// toBitmap() copies — the paint-owned buffer must not be handed to the async NDI thread.
-		sender.sendFrame(image.toBitmap(), size.width, size.height, size.width * 4);
+		const t0 = process.hrtime.bigint();
+		const bitmap = image.toBitmap();
+		copyNs += process.hrtime.bigint() - t0;
+		copies++;
+		sender.sendFrame(bitmap, size.width, size.height, size.width * 4);
 	});
 
 	win.webContents.on('render-process-gone', (e, details) => {
@@ -102,9 +107,11 @@ app.whenReady().then(async () => {
 		lastLogPaints = paints; lastLogTime = now;
 		const s = sender.stats();
 		const mem = process.memoryUsage();
-		console.log(`[slice] paintFps=${paintFps.toFixed(1)} sent=${s.sent} dropped=${s.dropped} ndiConnections=${sender.connections()} rssMB=${Math.round(mem.rss / 1048576)}`);
+		const copyMs = copies ? Number(copyNs / BigInt(copies)) / 1e6 : 0;
+		copyNs = 0n; copies = 0;
+		console.log(`[slice] paintFps=${paintFps.toFixed(1)} sent=${s.sent} dropped=${s.dropped} lat=${s.latencyMs}ms copy=${copyMs.toFixed(1)}ms ndiConnections=${sender.connections()} rssMB=${Math.round(mem.rss / 1048576)}`);
 		if (++statTick % 2 === 0) {
-			emit('stats', { paintFps: +paintFps.toFixed(1), sent: s.sent, dropped: s.dropped, rssMB: Math.round(mem.rss / 1048576) });
+			emit('stats', { paintFps: +paintFps.toFixed(1), sent: s.sent, dropped: s.dropped, latencyMs: s.latencyMs, copyMs: +copyMs.toFixed(1), rssMB: Math.round(mem.rss / 1048576) });
 		}
 	}, 5000);
 

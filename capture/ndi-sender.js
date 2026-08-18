@@ -8,9 +8,11 @@
 
 const grandiose = require('@stagetimerio/grandiose');
 
-const CREATE_RETRY_MS = [0, 2000, 5000, 10000, 20000, 30000, 60000];
+// Ladder must outlast the observed post-kill advertisement linger (~4 min after an
+// unclean exit, Session 2 + Session 5 measurements): total ≈ 6.1 min.
+const CREATE_RETRY_MS = [0, 2000, 5000, 10000, 20000, 30000, 60000, 60000, 60000, 60000, 60000];
 
-async function create(name, { fps = 30, onLog = console.log } = {}) {
+async function create(name, { fps = 30, depth = 2, onLog = console.log } = {}) {
 	let sender = null;
 	for (let attempt = 0; attempt < CREATE_RETRY_MS.length; attempt++) {
 		if (CREATE_RETRY_MS[attempt] > 0) {
@@ -27,19 +29,23 @@ async function create(name, { fps = 30, onLog = console.log } = {}) {
 	}
 	onLog(`[ndi] sender created: ${typeof sender.sourcename === 'function' ? sender.sourcename() : name}`);
 
-	// Depth-2 send pipeline: one frame on the NDI thread while the next is submitted.
-	// Depth 1 caps a 60fps stream at ~44fps (measured 2026-08-18); deeper than 2 just adds
-	// latency. Frames beyond the cap are dropped, never queued.
-	const MAX_IN_FLIGHT = 2;
+	// Bounded send pipeline: up to `depth` frames in flight; beyond that frames are
+	// dropped, never queued. Depth 1 caps a 60fps stream at ~44fps (measured 2026-08-18).
+	// Depth 2 suits one sender per process. In a consolidated multi-sender process the
+	// send-completion callbacks share a busy main loop and come back late, so a deeper
+	// pipeline (4-6) is needed to absorb the completion latency (measured 2026-08-18:
+	// six senders at depth 2 starve to ~10 fps each while pure Node does 6x30 clean).
+	const MAX_IN_FLIGHT = depth;
 	let inFlight = 0;
 	let dropped = 0;
 	let sent = 0;
-
+	let latencyEmaMs = 0; // send-submit -> completion-callback, smoothed
 	return {
 		/** BGRA buffer → NDI frame. Returns false if dropped (pipeline full). */
 		sendFrame(bgra, width, height, strideBytes) {
 			if (inFlight >= MAX_IN_FLIGHT) { dropped++; return false; }
 			inFlight++;
+			const t0 = Date.now();
 			sender.video({
 				xres: width,
 				yres: height,
@@ -50,11 +56,13 @@ async function create(name, { fps = 30, onLog = console.log } = {}) {
 				frameFormatType: grandiose.FORMAT_TYPE_PROGRESSIVE,
 				lineStrideBytes: strideBytes || width * 4,
 				data: bgra,
-			}).then(() => { sent++; inFlight--; })
-				.catch(err => { inFlight--; onLog(`[ndi] send error: ${err.message}`); });
+			}).then(() => {
+				sent++; inFlight--;
+				latencyEmaMs = latencyEmaMs ? latencyEmaMs * 0.9 + (Date.now() - t0) * 0.1 : Date.now() - t0;
+			}).catch(err => { inFlight--; onLog(`[ndi] send error: ${err.message}`); });
 			return true;
 		},
-		stats() { return { sent, dropped }; },
+		stats() { return { sent, dropped, latencyMs: +latencyEmaMs.toFixed(1) }; },
 		connections() { return sender.connections ? sender.connections() : -1; },
 		tally() { return sender.tally; },
 		async destroy() { if (sender && sender.destroy) await sender.destroy(); sender = null; },
