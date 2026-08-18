@@ -243,7 +243,7 @@ function statusReport() {
 	}
 }
 
-readline.createInterface({ input: process.stdin }).on('line', async line => {
+async function handleCommand(line) {
 	const [cmd, player, plane] = line.trim().split(/\s+/);
 	if (!cmd) return;
 	if (cmd === 'quit') return shutdown();
@@ -264,7 +264,22 @@ readline.createInterface({ input: process.stdin }).on('line', async line => {
 		return;
 	}
 	console.log('commands: status | reload <player> <plane> | stop <player> <plane> | start <player> <plane> | quit');
-});
+}
+
+readline.createInterface({ input: process.stdin }).on('line', handleCommand);
+
+// File-based command channel for detached/unattended operation: append lines to
+// <config-dir>/supervisor.cmd; they are executed and the file truncated.
+const cmdFile = path.join(configDir, 'supervisor.cmd');
+setInterval(() => {
+	let text;
+	try { text = fs.readFileSync(cmdFile, 'utf8'); } catch { return; }
+	if (!text.trim()) return;
+	try { fs.writeFileSync(cmdFile, ''); } catch {}
+	for (const line of text.split(/\r?\n/)) {
+		if (line.trim()) { log(`[sup] cmd-file: ${line.trim()}`); handleCommand(line); }
+	}
+}, 2000);
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
