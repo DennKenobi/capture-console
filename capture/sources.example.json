@@ -1,0 +1,23 @@
+{
+  "defaults": {
+    "room": "",
+    "vdoBase": "https://vdo.ninja/",
+    "ndiPrefix": "CC-",
+    "video": { "width": 1920, "height": 1080, "fps": 30 },
+    "audio": { "audioOutputDevice": "VBMatrix In 6" }
+  },
+  "sources": [
+    {
+      "name": "Alice",
+      "streamId": "alice_stream_id",
+      "video": { "ndiName": "", "width": 1920, "height": 1080, "fps": 60, "extraParams": "" },
+      "audio": { "audioOutputDevice": "", "channelOffset": 0, "extraParams": "" }
+    },
+    {
+      "name": "Bob",
+      "streamId": "bob_stream_id",
+      "video": { "ndiName": "", "width": 1280, "height": 720, "fps": 30, "extraParams": "" },
+      "audio": { "audioOutputDevice": "", "channelOffset": 1, "extraParams": "" }
+    }
+  ]
+}

@@ -18,6 +18,20 @@ const HEIGHT = parseInt(arg('height', '1080'), 10);
 const FPS = parseInt(arg('fps', '30'), 10);
 const DURATION_S = parseInt(arg('duration', '0'), 10); // 0 = run until killed
 const PROBE_SHARED_TEXTURE = process.argv.includes('--probe-shared-texture');
+const USER_DATA_DIR = arg('user-data-dir', '');
+const STATUS_JSON = process.argv.includes('--status-json');
+
+// Per-worker profile isolation (Model B): must happen before app ready.
+if (USER_DATA_DIR) {
+	app.setPath('userData', USER_DATA_DIR);
+	app.setPath('sessionData', USER_DATA_DIR);
+}
+
+// Supervisor status protocol: one JSON object per line on stdout (SESSION4-SPEC §3.4).
+function emit(ev, extra) {
+	if (!STATUS_JSON) return;
+	console.log(JSON.stringify(Object.assign({ ev, plane: 'video' }, extra || {})));
+}
 
 // The window is hidden for its entire life — Chromium must never throttle it.
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
@@ -33,6 +47,7 @@ app.whenReady().then(async () => {
 	console.log(`[slice] ndi=${NDI_NAME} ${WIDTH}x${HEIGHT}@${FPS}${PROBE_SHARED_TEXTURE ? ' (shared-texture probe)' : ''}`);
 
 	const sender = await ndi.create(NDI_NAME, { fps: FPS });
+	emit('ready', { ndiName: NDI_NAME });
 
 	const win = new BrowserWindow({
 		show: false,
@@ -71,12 +86,16 @@ app.whenReady().then(async () => {
 
 	win.webContents.on('render-process-gone', (e, details) => {
 		console.error(`[slice] RENDERER GONE: ${details.reason} (exitCode ${details.exitCode})`);
+		emit('exiting', { reason: `renderer-gone:${details.reason}` });
+		app.exit(3); // let the supervisor restart us — a dead page cannot recover itself
 	});
-	win.webContents.on('did-fail-load', (e, code, desc) => {
+	win.webContents.on('did-fail-load', (e, code, desc, url, isMainFrame) => {
 		console.error(`[slice] LOAD FAILED: ${code} ${desc}`);
+		if (isMainFrame && code !== -3) { emit('exiting', { reason: `load-failed:${code}` }); app.exit(4); }
 	});
-	win.webContents.on('did-finish-load', () => console.log('[slice] page loaded'));
+	win.webContents.on('did-finish-load', () => { console.log('[slice] page loaded'); emit('loaded', {}); });
 
+	let statTick = 0;
 	setInterval(() => {
 		const now = Date.now();
 		const paintFps = (paints - lastLogPaints) / ((now - lastLogTime) / 1000);
@@ -84,11 +103,15 @@ app.whenReady().then(async () => {
 		const s = sender.stats();
 		const mem = process.memoryUsage();
 		console.log(`[slice] paintFps=${paintFps.toFixed(1)} sent=${s.sent} dropped=${s.dropped} ndiConnections=${sender.connections()} rssMB=${Math.round(mem.rss / 1048576)}`);
+		if (++statTick % 2 === 0) {
+			emit('stats', { paintFps: +paintFps.toFixed(1), sent: s.sent, dropped: s.dropped, rssMB: Math.round(mem.rss / 1048576) });
+		}
 	}, 5000);
 
 	if (DURATION_S > 0) {
 		setTimeout(async () => {
 			console.log(`[slice] duration ${DURATION_S}s reached; shutting down cleanly`);
+			emit('exiting', { reason: 'duration' });
 			try { await sender.destroy(); } catch {}
 			app.exit(0);
 		}, DURATION_S * 1000);

@@ -27,15 +27,19 @@ async function create(name, { fps = 30, onLog = console.log } = {}) {
 	}
 	onLog(`[ndi] sender created: ${typeof sender.sourcename === 'function' ? sender.sourcename() : name}`);
 
-	let inFlight = false;
+	// Depth-2 send pipeline: one frame on the NDI thread while the next is submitted.
+	// Depth 1 caps a 60fps stream at ~44fps (measured 2026-08-18); deeper than 2 just adds
+	// latency. Frames beyond the cap are dropped, never queued.
+	const MAX_IN_FLIGHT = 2;
+	let inFlight = 0;
 	let dropped = 0;
 	let sent = 0;
 
 	return {
-		/** BGRA buffer → NDI frame. Returns false if dropped (previous send still in flight). */
+		/** BGRA buffer → NDI frame. Returns false if dropped (pipeline full). */
 		sendFrame(bgra, width, height, strideBytes) {
-			if (inFlight) { dropped++; return false; }
-			inFlight = true;
+			if (inFlight >= MAX_IN_FLIGHT) { dropped++; return false; }
+			inFlight++;
 			sender.video({
 				xres: width,
 				yres: height,
@@ -46,8 +50,8 @@ async function create(name, { fps = 30, onLog = console.log } = {}) {
 				frameFormatType: grandiose.FORMAT_TYPE_PROGRESSIVE,
 				lineStrideBytes: strideBytes || width * 4,
 				data: bgra,
-			}).then(() => { sent++; inFlight = false; })
-				.catch(err => { inFlight = false; onLog(`[ndi] send error: ${err.message}`); });
+			}).then(() => { sent++; inFlight--; })
+				.catch(err => { inFlight--; onLog(`[ndi] send error: ${err.message}`); });
 			return true;
 		},
 		stats() { return { sent, dropped }; },
