@@ -119,7 +119,15 @@ app.whenReady().then(async () => {
 		setTimeout(async () => {
 			console.log(`[slice] duration ${DURATION_S}s reached; shutting down cleanly`);
 			emit('exiting', { reason: 'duration' });
-			try { await sender.destroy(); } catch {}
+			// Same deadlock class as video-host: never destroy with a send in flight,
+			// and keep an external watchdog in case a native call blocks the loop.
+			const { spawn } = require('child_process');
+			spawn('cmd.exe', ['/c', `ping -n 7 127.0.0.1 >nul & taskkill /F /PID ${process.pid}`],
+				{ detached: true, stdio: 'ignore', windowsHide: true }).unref();
+			win.destroy();
+			const drained = await sender.drain(500);
+			if (drained) { try { await sender.destroy(); } catch {} }
+			else console.log('[slice] sender not drained — skipping destroy');
 			app.exit(0);
 		}, DURATION_S * 1000);
 	}

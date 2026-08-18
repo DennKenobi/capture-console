@@ -34,7 +34,14 @@ const ELECTRON_EXE = process.platform === 'win32'
 	: path.join(REPO_ROOT, 'node_modules', '.bin', 'electron');
 const READY_TIMEOUT_MS = 90000;
 const RESTART_BACKOFF_MS = [2000, 5000, 15000, 30000, 60000];
+// Page-load failures (worker exit code 4) churn whole process trees and cluster
+// exactly when the box is saturated — back off much harder (Session 4 storm lesson).
+const LOADFAIL_BACKOFF_MS = [15000, 30000, 60000, 120000, 300000];
+const EXIT_LOAD_FAILED = 4;
 const MAX_RESTARTS = 5;
+// FAILED is not terminal: storms end. Retry a failed worker every 5 min, forever,
+// logging each attempt (Session 4 storm lesson; SESSION5-SPEC Part C carry-in).
+const FAILED_RETRY_MS = 300000;
 const HEALTHY_RESET_MS = 120000;
 
 const configDir = path.dirname(path.resolve(CONFIG_PATH));
@@ -64,12 +71,36 @@ if (configErrors.length) {
 // state: idle | starting | running | backoff | stopped | failed
 const workers = new Map(); // key "player/plane"
 
+// Video topology (Session 5 Part A): "per-player" = one slice-main.js process per
+// player (full isolation); "consolidated" = ONE video-host.js process hosting every
+// player's surface (one Chromium infrastructure, per-player renderers, per-player
+// window self-heal inside the host). Audio workers are identical in both.
+const VIDEO_TOPOLOGY = argOf('video-topology',
+	(config.defaults && config.defaults.videoTopology) || 'per-player');
+const VIDEOHOST_KEY = 'videohost/video';
+
 function workerSpecs() {
 	const specs = [];
+	if ((!ONLY_PLANE || ONLY_PLANE === 'video') && VIDEO_TOPOLOGY === 'consolidated') {
+		const args = [
+			`--config=${path.resolve(CONFIG_PATH)}`,
+			`--user-data-dir=${path.join(dataRoot, 'video-host')}`,
+			'--status-json',
+		];
+		if (ONLY_SOURCE) args.push(`--source=${ONLY_SOURCE}`);
+		if (config.defaults && config.defaults.video && config.defaults.video.ndiDepth) {
+			args.push(`--ndi-depth=${config.defaults.video.ndiDepth}`);
+		}
+		specs.push({
+			key: VIDEOHOST_KEY, player: 'videohost', plane: 'video', consolidated: true,
+			entry: path.join(__dirname, 'video-host.js'),
+			args,
+		});
+	}
 	for (const source of config.sources) {
 		if (ONLY_SOURCE && source.name !== ONLY_SOURCE) continue;
 		const v = builder.resolveVideo(source, config.defaults);
-		if (!ONLY_PLANE || ONLY_PLANE === 'video') {
+		if ((!ONLY_PLANE || ONLY_PLANE === 'video') && VIDEO_TOPOLOGY !== 'consolidated') {
 			specs.push({
 				key: `${source.name}/video`, player: source.name, plane: 'video',
 				entry: path.join(__dirname, 'slice-main.js'),
@@ -106,7 +137,8 @@ function spawnWorker(w) {
 	w.startedAt = Date.now();
 	w.requestedStop = false;
 	const child = spawn(ELECTRON_EXE, [w.spec.entry, ...w.spec.args], {
-		stdio: ['ignore', 'pipe', 'pipe'],
+		// Consolidated video host takes per-player commands on stdin.
+		stdio: [w.spec.consolidated ? 'pipe' : 'ignore', 'pipe', 'pipe'],
 		windowsHide: true,
 	});
 	w.child = child;
@@ -137,13 +169,28 @@ function spawnWorker(w) {
 }
 
 function handleWorkerEvent(w, ev) {
+	// Consolidated host: per-player events are recorded per player; only host-level
+	// events drive the worker's own lifecycle state.
+	if (w.spec.consolidated && ev.player && ev.player !== 'videohost') {
+		w.playerStats = w.playerStats || {};
+		if (ev.ev === 'stats') {
+			w.playerStats[ev.player] = Object.assign({}, w.playerStats[ev.player], ev, { at: Date.now() });
+		} else {
+			w.playerStats[ev.player] = Object.assign({}, w.playerStats[ev.player], { lastEv: ev.ev, at: Date.now() });
+			log(`[sup] videohost/${ev.player}: ${ev.ev}${ev.reason ? ` (${ev.reason})` : ''}`);
+			emitSup(`vhost-${ev.ev}`, { player: ev.player, reason: ev.reason });
+		}
+		if (ev.ev !== 'host-loaded') return;
+	}
 	switch (ev.ev) {
 		case 'ready':
 			log(`[sup] ${w.spec.key} ready${ev.ndiName ? ` (ndi=${ev.ndiName})` : ''}`);
 			break;
+		case 'host-loaded':
 		case 'loaded':
 			w.state = 'running';
 			clearTimeout(w.readyTimer);
+			clearTimeout(w.failedTimer);
 			log(`[sup] ${w.spec.key} loaded`);
 			emitSup('loaded', { key: w.spec.key });
 			if (w.loadedResolve) { w.loadedResolve(); w.loadedResolve = null; }
@@ -172,15 +219,24 @@ function handleWorkerExit(w, code, signal) {
 	if (shuttingDown || w.requestedStop) { w.state = 'stopped'; return; }
 
 	if (w.restarts >= MAX_RESTARTS) {
+		// Not terminal: storms end. Hold a 5-min cooldown, then try again, forever.
 		w.state = 'failed';
-		log(`[sup] ${w.spec.key} FAILED after ${MAX_RESTARTS} restarts — leaving down, siblings unaffected`);
-		emitSup('worker-failed', { key: w.spec.key });
+		log(`[sup] ${w.spec.key} FAILED after ${w.restarts} restarts — cooldown ${FAILED_RETRY_MS / 60000} min, then retry (siblings unaffected)`);
+		emitSup('worker-failed', { key: w.spec.key, restarts: w.restarts });
+		w.failedTimer = setTimeout(() => {
+			log(`[sup] ${w.spec.key} FAILED-cooldown retry (attempt ${w.restarts + 1} lifetime)`);
+			emitSup('failed-retry', { key: w.spec.key });
+			w.restarts++;
+			spawnWorker(w);
+		}, FAILED_RETRY_MS);
 		return;
 	}
-	const delay = RESTART_BACKOFF_MS[Math.min(w.restarts, RESTART_BACKOFF_MS.length - 1)];
+	// Load failures churn full process trees and cluster under saturation — harder ladder.
+	const ladder = code === EXIT_LOAD_FAILED ? LOADFAIL_BACKOFF_MS : RESTART_BACKOFF_MS;
+	const delay = ladder[Math.min(w.restarts, ladder.length - 1)];
 	w.restarts++;
 	w.state = 'backoff';
-	log(`[sup] ${w.spec.key} restart ${w.restarts}/${MAX_RESTARTS} in ${delay / 1000}s`);
+	log(`[sup] ${w.spec.key} restart ${w.restarts}/${MAX_RESTARTS} in ${delay / 1000}s${code === EXIT_LOAD_FAILED ? ' (load-fail ladder)' : ''}`);
 	w.backoffTimer = setTimeout(() => spawnWorker(w), delay);
 }
 
@@ -194,6 +250,7 @@ function waitLoaded(w) {
 async function stopWorker(w, why) {
 	w.requestedStop = true;
 	clearTimeout(w.backoffTimer);
+	clearTimeout(w.failedTimer);
 	if (!w.child) { w.state = 'stopped'; return; }
 	log(`[sup] stopping ${w.spec.key} (${why})`);
 	const exited = new Promise(resolve => w.child.once('exit', resolve));
@@ -240,6 +297,12 @@ function statusReport() {
 			? Object.entries(w.lastStats).filter(([k]) => !['ev', 'plane'].includes(k)).map(([k, v]) => `${k}=${v}`).join(' ')
 			: '';
 		console.log(`  ${w.spec.key.padEnd(20)} ${w.state.padEnd(9)} pid=${String(w.pid || '-').padEnd(7)} restarts=${w.restarts} ${stats}`);
+		if (w.spec.consolidated && w.playerStats) {
+			for (const [player, ps] of Object.entries(w.playerStats)) {
+				const line = Object.entries(ps).filter(([k]) => !['ev', 'plane', 'player', 'at'].includes(k)).map(([k, v]) => `${k}=${v}`).join(' ');
+				console.log(`    · ${player.padEnd(16)} ${line}`);
+			}
+		}
 	}
 }
 
@@ -250,7 +313,21 @@ async function handleCommand(line) {
 	if (cmd === 'status') return statusReport();
 	if (['reload', 'stop', 'start'].includes(cmd)) {
 		const key = `${player}/${plane}`;
-		const w = getWorker(key);
+		let w = getWorker(key);
+		// Consolidated topology: a player's video plane is a window inside the host —
+		// forward the command to video-host stdin (window rebuild; NDI sender kept,
+		// so no name-linger penalty). `<cmd> videohost video` still operates on the
+		// host process itself.
+		if (!w && plane === 'video' && VIDEO_TOPOLOGY === 'consolidated') {
+			const host = getWorker(VIDEOHOST_KEY);
+			if (host && host.child && host.child.stdin) {
+				log(`[sup] forwarding to videohost: ${cmd} ${player}`);
+				emitSup('vhost-forward', { cmd, player });
+				host.child.stdin.write(`${cmd} ${player}\n`);
+				return;
+			}
+			return console.log(`videohost not running; cannot ${cmd} ${player}/video`);
+		}
 		if (!w) return console.log(`unknown worker: ${key}`);
 		if (cmd === 'stop') return void stopWorker(w, 'stdin');
 		if (cmd === 'start') { w.restarts = 0; return void spawnWorker(w); }

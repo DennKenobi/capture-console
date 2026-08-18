@@ -35,8 +35,10 @@ const USER_DATA_DIR = arg('user-data-dir', '');
 const DURATION_S = parseInt(arg('duration', '0'), 10);
 const STATUS_JSON = process.argv.includes('--status-json');
 // Consolidated processes need a deeper send pipeline than per-player ones: completion
-// callbacks share one busy main loop (see ndi-sender.js).
-const NDI_DEPTH = parseInt(arg('ndi-depth', '4'), 10);
+// callbacks share one busy main loop and return 50-200 ms late in bursts; depth 8
+// absorbs them fully at 6×30fps (depth 2 → ~10 fps sent, depth 4 → ~19, depth 8 →
+// paint rate with ~zero drops; measured 2026-08-18).
+const NDI_DEPTH = parseInt(arg('ndi-depth', '8'), 10);
 
 if (!CONFIG_PATH) { console.error('[vhost] --config=<path> is required'); app.exit(2); }
 
@@ -174,16 +176,26 @@ async function shutdown(reason) {
 	if (shuttingDown) return;
 	shuttingDown = true;
 	console.log(`[vhost] shutting down (${reason})`);
+	// External watchdog: a native destroy() that blocks the main loop cannot be
+	// escaped by any JS timer — only another process can kill us. Normal exit wins.
+	const { spawn } = require('child_process');
+	spawn('cmd.exe', ['/c', `ping -n 9 127.0.0.1 >nul & taskkill /F /PID ${process.pid}`],
+		{ detached: true, stdio: 'ignore', windowsHide: true }).unref();
 	for (const [, s] of surfaces) {
 		emit('exiting', s.name, { reason });
 		destroyWindow(s);
 	}
-	// Sender destroys can hang (native lib, live receiver connections) — never let
-	// them block process exit. 3 s grace, then exit regardless; OS reclaims the rest.
-	const destroys = [...surfaces.values()].map(async s => {
-		if (s.sender) { try { await s.sender.destroy(); } catch {} s.sender = null; }
-	});
-	await Promise.race([Promise.all(destroys), new Promise(r => setTimeout(r, 3000))]);
+	// Destroying a sender with a send in flight deadlocks the main thread (the
+	// completion callback needs the thread destroy blocks). Drain first; if a sender
+	// won't drain, skip its destroy — process exit reclaims it, the name lingers
+	// either way, and the create-retry ladder covers the respawn.
+	for (const [, s] of surfaces) {
+		if (!s.sender) continue;
+		const drained = await s.sender.drain(500);
+		if (drained) { try { await s.sender.destroy(); } catch {} }
+		else console.log(`[vhost] ${s.name} sender not drained — skipping destroy`);
+		s.sender = null;
+	}
 	app.exit(0);
 }
 
@@ -216,6 +228,9 @@ app.whenReady().then(async () => {
 		});
 	}
 	console.log('[vhost] bring-up complete');
+	// Host-level loaded signal: drives the supervisor's sequenced-bring-up gate for
+	// the consolidated worker (per-player 'loaded' lines are informational there).
+	emit('host-loaded', 'videohost', { players: surfaces.size });
 
 	setInterval(() => {
 		const now = Date.now();

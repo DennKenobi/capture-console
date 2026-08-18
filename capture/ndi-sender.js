@@ -62,7 +62,15 @@ async function create(name, { fps = 30, depth = 2, onLog = console.log } = {}) {
 			}).catch(err => { inFlight--; onLog(`[ndi] send error: ${err.message}`); });
 			return true;
 		},
-		stats() { return { sent, dropped, latencyMs: +latencyEmaMs.toFixed(1) }; },
+		stats() { return { sent, dropped, latencyMs: +latencyEmaMs.toFixed(1), inFlight }; },
+		/** Wait for in-flight sends to complete (bounded). Destroying a sender while a
+		 *  send is in flight deadlocks: the native destroy blocks the main thread that
+		 *  the send-completion callback needs (observed 2026-08-18, Session 5). */
+		async drain(timeoutMs = 500) {
+			const t0 = Date.now();
+			while (inFlight > 0 && Date.now() - t0 < timeoutMs) await new Promise(r => setTimeout(r, 25));
+			return inFlight === 0;
+		},
 		connections() { return sender.connections ? sender.connections() : -1; },
 		tally() { return sender.tally; },
 		async destroy() { if (sender && sender.destroy) await sender.destroy(); sender = null; },
