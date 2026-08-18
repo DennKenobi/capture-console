@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Capture Console</title>
+<style>
+  /* Operator console: function over form (SESSION5-SPEC Part C). */
+  body { font: 13px/1.45 system-ui, sans-serif; margin: 12px; color: #182026; background: #f5f7f8; }
+  h1 { font-size: 16px; margin: 0 0 8px; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .bar .path { color: #5c7080; font-size: 12px; }
+  .pill { padding: 2px 8px; border-radius: 10px; font-weight: 600; font-size: 12px; }
+  .pill.up { background: #d4f7dc; color: #1d7a34; }
+  .pill.down { background: #fde3e3; color: #a82a2a; }
+  button { font: inherit; padding: 3px 10px; cursor: pointer; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  th, td { border: 1px solid #d3dce0; padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #e8eef1; font-size: 12px; }
+  td.mono, .mono { font-family: Consolas, monospace; font-size: 12px; }
+  .st { font-weight: 700; }
+  .st.running { color: #1d7a34; } .st.starting, .st.backoff { color: #b58105; }
+  .st.failed { color: #a82a2a; } .st.stopped, .st.idle, .st.unknown { color: #5c7080; }
+  .planebtns { white-space: nowrap; }
+  #editor { background: #fff; border: 1px solid #b8c4ca; padding: 12px; margin-top: 12px; max-width: 980px; }
+  #editor h2 { font-size: 14px; margin: 0 0 8px; }
+  #editor .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 12px; }
+  #editor label { display: block; font-size: 11px; color: #5c7080; }
+  #editor input { width: 100%; box-sizing: border-box; font: inherit; padding: 2px 4px; }
+  #editor .urls { margin-top: 8px; font-family: Consolas, monospace; font-size: 11px; word-break: break-all; color: #33515e; }
+  #editor .urls b { color: #182026; }
+  #msg { color: #a82a2a; margin: 6px 0; white-space: pre-wrap; }
+  details { margin-top: 12px; } pre { font-size: 11px; background: #fff; padding: 8px; overflow: auto; }
+</style>
+</head>
+<body>
+  <h1>Capture Console</h1>
+  <div class="bar">
+    <span id="supPill" class="pill down">supervisor: —</span>
+    <button id="btnStart">Start supervisor</button>
+    <button id="btnStopAll">Stop everything</button>
+    <button id="btnRescan">Rescan config</button>
+    <button id="btnAdd">+ Add player</button>
+    <span class="path" id="cfgPath"></span>
+  </div>
+  <div id="msg"></div>
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th>Player</th><th>Stream ID</th><th>NDI name</th>
+        <th>Video plane</th><th>Audio plane</th><th></th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <div id="editor" hidden>
+    <h2 id="edTitle">Edit player</h2>
+    <div class="grid">
+      <div><label>Name</label><input id="f_name"></div>
+      <div><label>Stream ID</label><input id="f_streamId"></div>
+      <div><label>Room (blank = default)</label><input id="f_room"></div>
+      <div><label>NDI name (blank = prefix+name)</label><input id="f_ndiName"></div>
+      <div><label>Width</label><input id="f_width" type="number"></div>
+      <div><label>Height</label><input id="f_height" type="number"></div>
+      <div><label>FPS</label><input id="f_fps" type="number"></div>
+      <div><label>Video extra params</label><input id="f_vextra"></div>
+      <div><label>Audio output device (blank = default)</label><input id="f_adev"></div>
+      <div><label>Channel offset (0-7)</label><input id="f_choff" type="number"></div>
+      <div><label>Channels</label><input id="f_channels" type="number" placeholder="8"></div>
+      <div><label>Audio extra params</label><input id="f_aextra"></div>
+    </div>
+    <div class="urls">
+      <div><b>video →</b> <span id="u_video"></span></div>
+      <div><b>audio →</b> <span id="u_audio"></span></div>
+      <div><b>NDI →</b> <span id="u_ndi"></span></div>
+    </div>
+    <p>
+      <button id="btnSave">Save to sources.json</button>
+      <button id="btnCancel">Cancel</button>
+      <span style="color:#5c7080;font-size:12px">Saving edits the file only — use Reload (existing player) or Rescan (added/removed player) to apply.</span>
+    </p>
+  </div>
+
+  <details><summary>Raw supervisor status</summary><pre id="raw"></pre></details>
+  <script src="console.js"></script>
+</body>
+</html>

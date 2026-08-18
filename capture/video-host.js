@@ -234,6 +234,85 @@ function stopSurface(s) {
 	console.log(`[vhost] ${s.name} stopped`);
 }
 
+function readConfigFile() {
+	const fs = require('fs');
+	try {
+		const fresh = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+		const errors = builder.validateConfig(fresh);
+		if (errors.length) { console.error(`[vhost] config invalid: ${errors.join('; ')}`); return null; }
+		return fresh;
+	} catch (err) {
+		console.error(`[vhost] config unreadable: ${err.message}`);
+		return null;
+	}
+}
+
+async function retireSurface(s) {
+	stopSurface(s);
+	if (SENDER_MODE === 'proc') {
+		if (uProc && s.senderReady) uProc.postMessage({ type: 'destroy', player: s.name });
+		s.senderReady = false;
+	} else if (s.sender) {
+		const drained = await s.sender.drain(500);
+		if (drained) { try { await s.sender.destroy(); } catch {} }
+		else console.log(`[vhost] ${s.name} sender not drained — leaked until process restart`);
+		s.sender = null;
+	}
+	surfaces.delete(s.name);
+	emit('exiting', s.name, { reason: 'removed' });
+}
+
+// Reconcile surfaces to the config file on disk: add new, retire removed.
+// Existing surfaces are untouched (their reload re-derives from fresh config).
+async function rescanSurfaces() {
+	const fresh = readConfigFile();
+	if (!fresh) return;
+	const sources = fresh.sources.filter(src => !ONLY_SOURCE || src.name === ONLY_SOURCE);
+	const wanted = new Set(sources.map(src => src.name));
+	for (const [name, s] of [...surfaces]) {
+		if (!wanted.has(name)) {
+			console.log(`[vhost] rescan: removing ${name}`);
+			await retireSurface(s);
+		}
+	}
+	for (const source of sources) {
+		if (!surfaces.has(source.name)) {
+			console.log(`[vhost] rescan: adding ${source.name}`);
+			const s = makeSurface(source, fresh.defaults);
+			surfaces.set(source.name, s);
+			await startSurface(s);
+		}
+	}
+	console.log('[vhost] rescan complete');
+}
+
+// Reload one surface from the config file on disk (URL/geometry/NDI-name edits
+// apply). The sender is kept unless the NDI name changed.
+async function reloadSurface(s) {
+	const fresh = readConfigFile();
+	if (fresh) {
+		const source = fresh.sources.find(src => src.name === s.name);
+		if (source) {
+			const next = makeSurface(source, fresh.defaults);
+			if (next.ndiName !== s.ndiName) {
+				console.log(`[vhost] ${s.name} NDI name change ${s.ndiName} -> ${next.ndiName}`);
+				if (SENDER_MODE === 'proc') {
+					if (uProc && s.senderReady) uProc.postMessage({ type: 'destroy', player: s.name });
+					s.senderReady = false;
+				} else if (s.sender) {
+					const drained = await s.sender.drain(500);
+					if (drained) { try { await s.sender.destroy(); } catch {} }
+					s.sender = null;
+				}
+			}
+			s.url = next.url; s.ndiName = next.ndiName; s.video = next.video;
+		}
+	}
+	destroyWindow(s);
+	s.rebuilds = 0;
+	return startSurface(s);
+}
+
 let shuttingDown = false;
 async function shutdown(reason) {
 	if (shuttingDown) return;
@@ -325,6 +404,7 @@ app.whenReady().then(async () => {
 		const [cmd, player] = line.trim().split(/\s+/);
 		if (!cmd) return;
 		if (cmd === 'quit') return void shutdown('quit');
+		if (cmd === 'rescan') return void rescanSurfaces();
 		if (cmd === 'status') {
 			for (const [, s] of surfaces) console.log(`  ${s.name.padEnd(16)} ${s.state.padEnd(9)} rebuilds=${s.rebuilds}`);
 			return;
@@ -335,11 +415,9 @@ app.whenReady().then(async () => {
 		if (cmd === 'start') { s.rebuilds = 0; return void startSurface(s); }
 		if (cmd === 'reload') {
 			console.log(`[vhost] RELOAD ${s.name}`);
-			destroyWindow(s);
-			s.rebuilds = 0;
-			return void startSurface(s);
+			return void reloadSurface(s);
 		}
-		console.log('[vhost] commands: status | reload <player> | stop <player> | start <player> | quit');
+		console.log('[vhost] commands: status | reload <player> | stop <player> | start <player> | rescan | quit');
 	});
 
 	if (DURATION_S > 0) setTimeout(() => shutdown('duration'), DURATION_S * 1000);

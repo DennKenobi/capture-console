@@ -49,6 +49,29 @@ const dataRoot = path.join(configDir, '.workers');
 const logPath = argOf('log', path.join(configDir, 'supervisor.log'));
 const logStream = fs.createWriteStream(logPath, { flags: 'a' });
 
+// The console spawns us detached and may die/restart at will; our stdout pipe can
+// break mid-write. Never let EPIPE kill the workers' supervisor.
+process.stdout.on('error', () => {});
+process.stderr.on('error', () => {});
+
+// Single-instance guard + discovery handle for the console (file-based adoption).
+const pidPath = path.join(configDir, 'supervisor.pid');
+function pidFileAlive() {
+	try {
+		const other = parseInt(fs.readFileSync(pidPath, 'utf8').trim(), 10);
+		if (other && other !== process.pid) { process.kill(other, 0); return other; }
+	} catch {}
+	return 0;
+}
+{
+	const other = pidFileAlive();
+	if (other) {
+		console.error(`[sup] another supervisor (pid ${other}) already owns ${CONFIG_PATH} — exiting`);
+		process.exit(3);
+	}
+	fs.writeFileSync(pidPath, String(process.pid));
+}
+
 function ts() { return new Date().toISOString().slice(11, 23); }
 function log(line, consoleToo = true) {
 	const msg = `${ts()} ${line}`;
@@ -59,11 +82,12 @@ function emitSup(ev, extra) {
 	if (SUP_STATUS_JSON) console.log(JSON.stringify(Object.assign({ ev, sup: true }, extra || {})));
 }
 
-const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+let config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
 const configErrors = builder.validateConfig(config);
 if (configErrors.length) {
 	console.error('sources.json invalid:');
 	for (const e of configErrors) console.error('  - ' + e);
+	try { fs.unlinkSync(pidPath); } catch {}
 	process.exit(2);
 }
 
@@ -138,10 +162,15 @@ function spawnWorker(w) {
 	w.state = 'starting';
 	w.startedAt = Date.now();
 	w.requestedStop = false;
+	// The console runs us under ELECTRON_RUN_AS_NODE; that var must NOT reach the
+	// electron.exe workers or they would boot as plain Node.
+	const env = Object.assign({}, process.env);
+	delete env.ELECTRON_RUN_AS_NODE;
 	const child = spawn(ELECTRON_EXE, [w.spec.entry, ...w.spec.args], {
 		// Consolidated video host takes per-player commands on stdin.
 		stdio: [w.spec.consolidated ? 'pipe' : 'ignore', 'pipe', 'pipe'],
 		windowsHide: true,
+		env,
 	});
 	w.child = child;
 	w.pid = child.pid;
@@ -289,8 +318,91 @@ async function shutdown() {
 	log('[sup] shutting down all workers');
 	await Promise.all([...workers.values()].map(w => stopWorker(w, 'shutdown')));
 	log('[sup] shutdown complete');
+	writeStatusFile();
+	try { fs.unlinkSync(pidPath); } catch {}
 	logStream.end();
 	process.exit(0);
+}
+
+// ---- status file (console coupling; atomic tmp+rename) --------------------
+const statusPath = path.join(configDir, 'supervisor-status.json');
+function writeStatusFile() {
+	const snapshot = {
+		pid: process.pid,
+		at: Date.now(),
+		configPath: path.resolve(CONFIG_PATH),
+		videoTopology: VIDEO_TOPOLOGY,
+		shuttingDown,
+		workers: [...workers.values()].map(w => ({
+			key: w.spec.key,
+			player: w.spec.player,
+			plane: w.spec.plane,
+			consolidated: !!w.spec.consolidated,
+			state: w.state,
+			pid: w.child ? w.pid : null,
+			restarts: w.restarts,
+			lastStats: w.lastStats || null,
+			lastStatsAt: w.lastStatsAt || null,
+			playerStats: w.playerStats || null,
+		})),
+	};
+	try {
+		fs.writeFileSync(statusPath + '.tmp', JSON.stringify(snapshot));
+		fs.renameSync(statusPath + '.tmp', statusPath);
+	} catch { /* console just sees a stale tick */ }
+}
+setInterval(writeStatusFile, 2000);
+
+// ---- rescan: reconcile the worker table to the config file on disk --------
+// Adds new players' workers, stops+removes deleted ones, refreshes every spec so
+// the next reload/restart of an existing worker picks up edited parameters.
+// Siblings are never touched (KICKOFF Phase 2: add/remove without disturbance).
+async function rescan() {
+	let fresh;
+	try { fresh = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch (err) {
+		log(`[sup] RESCAN rejected: config unreadable (${err.message})`);
+		return;
+	}
+	const errors = builder.validateConfig(fresh);
+	if (errors.length) {
+		log(`[sup] RESCAN rejected: ${errors.join('; ')}`);
+		return;
+	}
+	config = fresh;
+	const specs = workerSpecs();
+	const wanted = new Map(specs.map(s => [s.key, s]));
+	// refresh specs of existing workers; collect newcomers
+	const newcomers = [];
+	for (const spec of specs) {
+		const w = workers.get(spec.key);
+		if (w) { w.spec = spec; } else { newcomers.push(spec); }
+	}
+	// stop and drop workers whose player left the config
+	for (const [key, w] of [...workers]) {
+		if (!wanted.has(key)) {
+			log(`[sup] RESCAN removing ${key}`);
+			emitSup('rescan-remove', { key });
+			await stopWorker(w, 'rescan-remove');
+			workers.delete(key);
+		}
+	}
+	// consolidated host reconciles its own windows from the same file
+	const host = workers.get(VIDEOHOST_KEY);
+	if (host && host.child && host.child.stdin) {
+		log('[sup] RESCAN forwarding to videohost');
+		host.child.stdin.write('rescan\n');
+	}
+	// spawn newcomers sequenced (video-plane first is preserved by spec order)
+	for (const spec of newcomers) {
+		log(`[sup] RESCAN adding ${spec.key}`);
+		emitSup('rescan-add', { key: spec.key });
+		const w = { spec, state: 'idle', restarts: 0, requestedStop: false, child: null };
+		workers.set(spec.key, w);
+		spawnWorker(w);
+		await Promise.race([waitLoaded(w), new Promise(r => setTimeout(r, READY_TIMEOUT_MS))]);
+	}
+	log('[sup] RESCAN complete');
+	emitSup('rescan-complete', {});
 }
 
 function statusReport() {
@@ -333,16 +445,25 @@ async function handleCommand(line) {
 		if (!w) return console.log(`unknown worker: ${key}`);
 		if (cmd === 'stop') return void stopWorker(w, 'stdin');
 		if (cmd === 'start') { w.restarts = 0; return void spawnWorker(w); }
-		// reload = the sanctioned change mechanism: kill + respawn (spec fixed at startup;
-		// config edits require a supervisor restart in Phase 1)
+		// reload = the sanctioned change mechanism: kill + respawn from CURRENT config
+		// (spec refreshed from disk so console edits like channelOffset apply).
 		log(`[sup] RELOAD ${key} requested`);
 		emitSup('reload-begin', { key });
+		try {
+			const fresh = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+			if (!builder.validateConfig(fresh).length) {
+				config = fresh;
+				const spec = workerSpecs().find(s => s.key === w.spec.key);
+				if (spec) w.spec = spec;
+			}
+		} catch { /* keep the old spec if the file is mid-edit */ }
 		await stopWorker(w, 'reload');
 		w.restarts = 0;
 		spawnWorker(w);
 		return;
 	}
-	console.log('commands: status | reload <player> <plane> | stop <player> <plane> | start <player> <plane> | quit');
+	if (cmd === 'rescan') return void rescan();
+	console.log('commands: status | reload <player> <plane> | stop <player> <plane> | start <player> <plane> | rescan | quit');
 }
 
 readline.createInterface({ input: process.stdin }).on('line', handleCommand);
