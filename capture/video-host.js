@@ -19,7 +19,7 @@
 // whole-process death is the supervisor's to handle.
 'use strict';
 
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, utilityProcess } = require('electron');
 const path = require('path');
 const readline = require('readline');
 const ndi = require('./ndi-sender');
@@ -39,6 +39,12 @@ const STATUS_JSON = process.argv.includes('--status-json');
 // absorbs them fully at 6×30fps (depth 2 → ~10 fps sent, depth 4 → ~19, depth 8 →
 // paint rate with ~zero drops; measured 2026-08-18).
 const NDI_DEPTH = parseInt(arg('ndi-depth', '8'), 10);
+// Sender placement: 'inline' = sends from this main process; 'proc' = sends from a
+// utilityProcess with its own event loop, shedding all N-API submit + completion
+// work from the main loop at the price of one extra frame copy (postMessage
+// serialize, ~3 ms/1080p). SharedArrayBuffer/transfer are NOT supported across
+// utilityProcess postMessage (probed 2026-08-18), so copy semantics it is.
+const SENDER_MODE = arg('sender', 'inline');
 
 if (!CONFIG_PATH) { console.error('[vhost] --config=<path> is required'); app.exit(2); }
 
@@ -65,6 +71,52 @@ const HEALTHY_RESET_MS = 120000;
 
 // state: starting | running | backoff | stopped | failed
 const surfaces = new Map(); // player name -> surface record
+
+// ---- utility-process sender (SENDER_MODE === 'proc') ----------------------
+let uProc = null;
+const procReadyWaiters = new Map(); // player -> {resolve, reject}
+
+function spawnSenderProc() {
+	uProc = utilityProcess.fork(path.join(__dirname, 'ndi-sender-proc.js'), [], {
+		stdio: 'inherit', serviceName: 'cc-ndi-sender',
+	});
+	uProc.on('message', m => {
+		if (m.type === 'log') { console.log(m.line); return; }
+		if (m.type === 'stats') {
+			for (const [player, st] of Object.entries(m.players)) {
+				const s = surfaces.get(player);
+				if (s) s.procStats = st;
+			}
+			return;
+		}
+		if (m.type === 'ready' || m.type === 'create-failed') {
+			const w = procReadyWaiters.get(m.player);
+			procReadyWaiters.delete(m.player);
+			if (!w) return;
+			if (m.type === 'ready') w.resolve();
+			else w.reject(new Error(m.error));
+		}
+	});
+	uProc.on('exit', code => {
+		if (shuttingDown) return;
+		console.error(`[vhost] sender proc died (code ${code}) — respawning and re-creating senders`);
+		emit('sender-proc-died', 'videohost', { code });
+		for (const [, s] of surfaces) s.senderReady = false;
+		spawnSenderProc();
+		for (const [, s] of surfaces) {
+			if (s.state === 'running' || s.state === 'starting') {
+				procCreateSender(s).catch(err => console.error(`[vhost] ${s.name} sender re-create failed: ${err.message}`));
+			}
+		}
+	});
+}
+
+function procCreateSender(s) {
+	return new Promise((resolve, reject) => {
+		procReadyWaiters.set(s.name, { resolve, reject });
+		uProc.postMessage({ type: 'create', player: s.name, name: s.ndiName, fps: s.video.fps, depth: NDI_DEPTH });
+	}).then(() => { s.senderReady = true; });
+}
 
 function makeSurface(source, defaults) {
 	return {
@@ -97,7 +149,13 @@ function buildWindow(s) {
 		const bitmap = image.toBitmap();
 		s.copyNs += process.hrtime.bigint() - t0;
 		s.copies++;
-		s.sender.sendFrame(bitmap, size.width, size.height, size.width * 4);
+		if (SENDER_MODE === 'proc') {
+			if (s.senderReady && uProc) {
+				uProc.postMessage({ type: 'frame', player: s.name, w: size.width, h: size.height, stride: size.width * 4, data: bitmap });
+			}
+		} else {
+			s.sender.sendFrame(bitmap, size.width, size.height, size.width * 4);
+		}
 	});
 
 	win.webContents.on('render-process-gone', (e, details) => {
@@ -150,7 +208,12 @@ function scheduleRebuild(s) {
 async function startSurface(s) {
 	s.requestedStop = false;
 	s.state = 'starting';
-	if (!s.sender) {
+	if (SENDER_MODE === 'proc') {
+		if (!s.senderReady) {
+			await procCreateSender(s);
+			emit('ready', s.name, { ndiName: s.ndiName });
+		}
+	} else if (!s.sender) {
 		s.sender = await ndi.create(s.ndiName, { fps: s.video.fps, depth: NDI_DEPTH });
 		emit('ready', s.name, { ndiName: s.ndiName });
 	}
@@ -185,16 +248,23 @@ async function shutdown(reason) {
 		emit('exiting', s.name, { reason });
 		destroyWindow(s);
 	}
-	// Destroying a sender with a send in flight deadlocks the main thread (the
-	// completion callback needs the thread destroy blocks). Drain first; if a sender
-	// won't drain, skip its destroy — process exit reclaims it, the name lingers
-	// either way, and the create-retry ladder covers the respawn.
-	for (const [, s] of surfaces) {
-		if (!s.sender) continue;
-		const drained = await s.sender.drain(500);
-		if (drained) { try { await s.sender.destroy(); } catch {} }
-		else console.log(`[vhost] ${s.name} sender not drained — skipping destroy`);
-		s.sender = null;
+	if (SENDER_MODE === 'proc' && uProc) {
+		// The utility process owns the senders: ask it to drain+destroy and exit.
+		const exited = new Promise(r => uProc.once('exit', r));
+		uProc.postMessage({ type: 'shutdown' });
+		await Promise.race([exited, new Promise(r => setTimeout(r, 3000))]);
+	} else {
+		// Destroying a sender with a send in flight deadlocks the main thread (the
+		// completion callback needs the thread destroy blocks). Drain first; if a sender
+		// won't drain, skip its destroy — process exit reclaims it, the name lingers
+		// either way, and the create-retry ladder covers the respawn.
+		for (const [, s] of surfaces) {
+			if (!s.sender) continue;
+			const drained = await s.sender.drain(500);
+			if (drained) { try { await s.sender.destroy(); } catch {} }
+			else console.log(`[vhost] ${s.name} sender not drained — skipping destroy`);
+			s.sender = null;
+		}
 	}
 	app.exit(0);
 }
@@ -213,7 +283,8 @@ app.whenReady().then(async () => {
 	}
 
 	const sources = config.sources.filter(src => !ONLY_SOURCE || src.name === ONLY_SOURCE);
-	console.log(`[vhost] hosting ${sources.length} video surface(s) from ${CONFIG_PATH}`);
+	console.log(`[vhost] hosting ${sources.length} video surface(s) from ${CONFIG_PATH} (sender=${SENDER_MODE}, depth=${NDI_DEPTH})`);
+	if (SENDER_MODE === 'proc') spawnSenderProc();
 	for (const source of sources) surfaces.set(source.name, makeSurface(source, config.defaults));
 
 	// Sequenced bring-up: one surface at a time, wait for loaded (KICKOFF §5 rule).
@@ -239,10 +310,13 @@ app.whenReady().then(async () => {
 			const paintFps = (s.paints - s.lastPaints) / ((now - s.lastTime) / 1000);
 			s.lastPaints = s.paints; s.lastTime = now;
 			if (s.state !== 'running' && s.state !== 'starting') continue;
-			const st = s.sender ? s.sender.stats() : { sent: 0, dropped: 0, latencyMs: 0 };
+			const st = SENDER_MODE === 'proc'
+				? (s.procStats || { sent: 0, dropped: 0, latencyMs: 0 })
+				: (s.sender ? s.sender.stats() : { sent: 0, dropped: 0, latencyMs: 0 });
 			const copyMs = s.copies ? Number(s.copyNs / BigInt(s.copies)) / 1e6 : 0;
 			s.copyNs = 0n; s.copies = 0;
-			console.log(`[vhost] ${s.name} paintFps=${paintFps.toFixed(1)} sent=${st.sent} dropped=${st.dropped} lat=${st.latencyMs}ms copy=${copyMs.toFixed(1)}ms rssMB=${rssMB}`);
+			const conn = SENDER_MODE === 'proc' ? 'proc' : (s.sender ? s.sender.connections() : '-');
+			console.log(`[vhost] ${s.name} paintFps=${paintFps.toFixed(1)} sent=${st.sent} dropped=${st.dropped} lat=${st.latencyMs}ms copy=${copyMs.toFixed(1)}ms conn=${conn} rssMB=${rssMB}`);
 			emit('stats', s.name, { paintFps: +paintFps.toFixed(1), sent: st.sent, dropped: st.dropped, latencyMs: st.latencyMs, copyMs: +copyMs.toFixed(1), rssMB });
 		}
 	}, 10000);

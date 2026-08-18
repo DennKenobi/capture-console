@@ -71,12 +71,14 @@ if (configErrors.length) {
 // state: idle | starting | running | backoff | stopped | failed
 const workers = new Map(); // key "player/plane"
 
-// Video topology (Session 5 Part A): "per-player" = one slice-main.js process per
-// player (full isolation); "consolidated" = ONE video-host.js process hosting every
-// player's surface (one Chromium infrastructure, per-player renderers, per-player
-// window self-heal inside the host). Audio workers are identical in both.
+// Video topology (Session 5 Part A bench, 2026-08-18): "consolidated" = ONE
+// video-host.js process hosting every player's surface — DEFAULT (3.2 vs 5.3 cores,
+// 10 vs 33 processes, 2.3 vs 5.7 GB against per-player at the 6-source bench mix;
+// fps content-rate-equal under normal load). "per-player" = one slice-main.js
+// process per player (full isolation) — remains available per config/CLI.
+// Audio workers are identical in both.
 const VIDEO_TOPOLOGY = argOf('video-topology',
-	(config.defaults && config.defaults.videoTopology) || 'per-player');
+	(config.defaults && config.defaults.videoTopology) || 'consolidated');
 const VIDEOHOST_KEY = 'videohost/video';
 
 function workerSpecs() {
