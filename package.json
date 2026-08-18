@@ -303,6 +303,7 @@
     "run-script-os-fix": "^1.0.4"
   },
   "dependencies": {
+    "@stagetimerio/grandiose": "^0.2.0",
     "electron-context-menu": "^3.6.1",
     "electron-is-dev": "^2.0.0",
     "electron-prompt": "^1.7.0",
