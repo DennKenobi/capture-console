@@ -35,14 +35,17 @@ const ONLY_SOURCE = arg('source', '');
 const USER_DATA_DIR = arg('user-data-dir', '');
 const DURATION_S = parseInt(arg('duration', '0'), 10);
 const STATUS_JSON = process.argv.includes('--status-json');
-// Sender placement: 'inline' = grandiose sends from this main process; 'native' =
-// shared-texture readback + NDI send inside native-modules/ndi-texture-send, one
-// worker thread per sender, zero per-frame work on the main loop beyond handle
-// forwarding (Session 6); 'proc' = utilityProcess offload — measured and rejected
-// (extra copy-on-serialize halves paint fps; SharedArrayBuffer/transfer are NOT
-// supported across utilityProcess postMessage, probed 2026-08-18), kept for
-// re-testing.
-let SENDER_MODE = arg('sender', 'inline');
+// Sender placement. 'native' (DEFAULT since the Session 6 gate bench: same
+// ≥59.6 fps at 1080p60, host tree 0.64-0.73 cores vs inline's 1.43-1.46) =
+// shared-texture readback + NDI send inside native-modules/ndi-texture-send,
+// one worker thread per sender, zero per-frame main-loop work beyond handle
+// forwarding; degrades automatically (whole-host to inline if the binary won't
+// load; per-surface to CPU bitmap on the same sender if textures stop opening).
+// 'inline' = grandiose submit+completion on this main process. 'proc' =
+// utilityProcess offload — measured and rejected (extra copy-on-serialize
+// halves paint fps; SharedArrayBuffer/transfer are NOT supported across
+// utilityProcess postMessage, probed 2026-08-18), kept for re-testing.
+let SENDER_MODE = arg('sender', 'native');
 // Depth semantics differ per mode. Inline: bookkeeping of unconfirmed sends whose
 // completion callbacks share this busy main loop — needs 8 at 6×30fps (depth 2 →
 // ~10 fps sent, depth 4 → ~19, depth 8 → paint rate; measured 2026-08-18). Native:
