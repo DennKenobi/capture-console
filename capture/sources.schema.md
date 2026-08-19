@@ -10,7 +10,9 @@ surface** — edits here take effect only via per-plane rebuild.
     "room": "",                       // vdo.ninja room, if used
     "vdoBase": "https://vdo.ninja/",
     "ndiPrefix": "CC-",               // ndiName fallback = ndiPrefix + name (use-case-neutral; never assume a purpose-specific prefix)
-    "video": { "width": 1920, "height": 1080, "fps": 30 },
+    "videoTopology": "consolidated",  // "consolidated" (one video-host process, default; Session 5 bench) | "per-player" (one slice-main process per player)
+    "video": { "width": 1920, "height": 1080, "fps": 30,
+               "ndiDepth": 8 },       // optional: NDI send-pipeline depth for the consolidated host (default 8; per-player workers use 2)
     "audio": { "audioOutputDevice": "VBMatrix In 6" }  // label fragment unique to ONE endpoint — see below
   },
   "sources": [
