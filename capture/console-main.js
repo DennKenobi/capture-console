@@ -19,11 +19,17 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const builder = require('./url-builder');
+const { PreviewManager } = require('./console-previews');
 
 function argOf(name, dflt) {
 	const hit = process.argv.find(a => a.startsWith(`--${name}=`));
 	return hit ? hit.split('=').slice(1).join('=') : dflt;
 }
+
+// Own data dir (optional): isolates the console profile and makes the whole
+// console process tree markable for bench sampling (tree-cpu.ps1 -Marker <dir>).
+const USER_DATA_DIR = argOf('user-data-dir', '');
+if (USER_DATA_DIR) app.setPath('userData', path.resolve(USER_DATA_DIR));
 
 const CONFIG_PATH = path.resolve(argOf('config', path.join(__dirname, 'sources.json')));
 const configDir = path.dirname(CONFIG_PATH);
@@ -43,6 +49,31 @@ function readJson(p) {
 	try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; }
 }
 
+// ---- previews (Session 7 Part A) -------------------------------------------
+// Receivers live here in console main; toggle state is console-session-local
+// (default ON — budget-gated, see fork CLAUDE.md Session 7). OFF really tears
+// the receiver down: a connected receiver makes the sender encode.
+
+let mainWin = null;
+const previews = new PreviewManager(
+	(channel, payload) => { if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send(channel, payload); },
+	msg => console.log(msg),
+);
+let previewGlobal = true;
+const previewRowOff = new Set(); // per-row opt-outs (default on)
+
+function previewSync() {
+	const config = readJson(CONFIG_PATH);
+	const entries = [];
+	if (previewGlobal && config && config.sources && !builder.validateConfig(config).length) {
+		for (const s of config.sources) {
+			if (previewRowOff.has(s.name)) continue;
+			try { entries.push({ player: s.name, ndiName: builder.ndiName(s, config.defaults) }); } catch {}
+		}
+	}
+	previews.sync(entries);
+}
+
 // ---- IPC surface ----------------------------------------------------------
 
 ipcMain.handle('state', () => {
@@ -56,7 +87,22 @@ ipcMain.handle('state', () => {
 		supervisorPid: pid,
 		// a status snapshot older than 8 s means the supervisor is wedged or gone
 		status: status && Date.now() - status.at < 8000 ? status : null,
+		previews: {
+			available: !previews.unavailable,
+			reason: previews.unavailable || '',
+			global: previewGlobal,
+			rowOff: [...previewRowOff],
+			states: previews.states(),
+		},
 	};
+});
+
+ipcMain.handle('preview-toggle', (e, scope, on) => {
+	if (scope === 'global') previewGlobal = !!on;
+	else if (on) previewRowOff.delete(scope);
+	else previewRowOff.add(scope);
+	previewSync();
+	return { ok: true };
 });
 
 ipcMain.handle('urls', (e, source, defaults) => {
@@ -121,6 +167,13 @@ app.whenReady().then(() => {
 	});
 	win.removeMenu();
 	win.loadFile(path.join(__dirname, 'console.html'));
+	mainWin = win;
+	previews.init();
+	previewSync();
+	// Reconcile receivers to config + toggles: picks up sources.json edits
+	// (add/remove/ndiName change) without renderer involvement.
+	setInterval(previewSync, 2000);
 });
 
+app.on('before-quit', () => { previews.shutdown(); });
 app.on('window-all-closed', () => app.quit()); // workers live on — file-coupled only

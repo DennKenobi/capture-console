@@ -30,6 +30,20 @@
   #editor .urls b { color: #182026; }
   #msg { color: #a82a2a; margin: 6px 0; white-space: pre-wrap; }
   details { margin-top: 12px; } pre { font-size: 11px; background: #fff; padding: 8px; overflow: auto; }
+  /* Session 7: in-row previews + meters */
+  .prevrow { display: flex; gap: 8px; align-items: flex-start; }
+  .prevwrap { position: relative; flex: none; }
+  .prevwrap canvas { display: block; width: 160px; height: 90px; background: #10161a; border: 1px solid #b8c4ca; }
+  .prevwrap canvas.stale { opacity: 0.45; }
+  .prevwrap canvas.off { opacity: 0.15; }
+  .pbadge { position: absolute; left: 3px; bottom: 3px; background: rgba(20,24,28,.82); color: #ffce56;
+            font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; }
+  .meterwrap { display: flex; gap: 6px; align-items: center; margin-bottom: 3px; }
+  .meter { width: 120px; height: 10px; background: #dde5e9; border: 1px solid #b8c4ca; }
+  .meter.dead { opacity: 0.35; }
+  .meterfill { height: 100%; width: 0%; background: #8aa5b3; transition: width 120ms linear; }
+  .meterfill.hot { background: #2fa04f; }
+  .mch { font-size: 11px; color: #5c7080; }
 </style>
 </head>
 <body>
@@ -40,6 +54,7 @@
     <button id="btnStopAll">Stop everything</button>
     <button id="btnRescan">Rescan config</button>
     <button id="btnAdd">+ Add player</button>
+    <button id="btnPrevAll" title="Preview receivers make senders encode — OFF disconnects them">Previews: ON</button>
     <span class="path" id="cfgPath"></span>
   </div>
   <div id="msg"></div>

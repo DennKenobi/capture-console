@@ -253,6 +253,10 @@ function buildWindow(s) {
 		scheduleRebuild(s);
 	});
 	win.webContents.on('did-finish-load', () => {
+		// The about:blank load from a park also lands here — without this guard it
+		// flips a stopped/retired surface back to 'running' (stats resume at 0 fps)
+		// and its 'loaded' event overwrites the 'stopped' status the console badges.
+		if (s.requestedStop || s.retired) return;
 		s.state = 'running';
 		console.log(`[vhost] ${s.name} page loaded`);
 		emit('loaded', s.name, {});
@@ -329,6 +333,10 @@ function stopSurface(s) {
 	parkWindow(s);
 	s.state = 'stopped';
 	console.log(`[vhost] ${s.name} stopped`);
+	// Surfaced per-player so the console can badge the row: the parked sender
+	// stays advertised with a frozen last frame (Session 6) — without the badge
+	// a live-looking preview thumbnail would lie about a stopped player.
+	emit('stopped', s.name, {});
 }
 
 function readConfigFile() {
