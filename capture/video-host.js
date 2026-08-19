@@ -23,6 +23,7 @@ const { app, BrowserWindow, utilityProcess } = require('electron');
 const path = require('path');
 const readline = require('readline');
 const ndi = require('./ndi-sender');
+const ndiNative = require('./ndi-native-sender');
 const builder = require('./url-builder');
 
 function arg(name, dflt) {
@@ -34,17 +35,24 @@ const ONLY_SOURCE = arg('source', '');
 const USER_DATA_DIR = arg('user-data-dir', '');
 const DURATION_S = parseInt(arg('duration', '0'), 10);
 const STATUS_JSON = process.argv.includes('--status-json');
-// Consolidated processes need a deeper send pipeline than per-player ones: completion
-// callbacks share one busy main loop and return 50-200 ms late in bursts; depth 8
-// absorbs them fully at 6×30fps (depth 2 → ~10 fps sent, depth 4 → ~19, depth 8 →
-// paint rate with ~zero drops; measured 2026-08-18).
-const NDI_DEPTH = parseInt(arg('ndi-depth', '8'), 10);
-// Sender placement: 'inline' = sends from this main process; 'proc' = sends from a
-// utilityProcess with its own event loop, shedding all N-API submit + completion
-// work from the main loop at the price of one extra frame copy (postMessage
-// serialize, ~3 ms/1080p). SharedArrayBuffer/transfer are NOT supported across
-// utilityProcess postMessage (probed 2026-08-18), so copy semantics it is.
-const SENDER_MODE = arg('sender', 'inline');
+// Sender placement: 'inline' = grandiose sends from this main process; 'native' =
+// shared-texture readback + NDI send inside native-modules/ndi-texture-send, one
+// worker thread per sender, zero per-frame work on the main loop beyond handle
+// forwarding (Session 6); 'proc' = utilityProcess offload — measured and rejected
+// (extra copy-on-serialize halves paint fps; SharedArrayBuffer/transfer are NOT
+// supported across utilityProcess postMessage, probed 2026-08-18), kept for
+// re-testing.
+let SENDER_MODE = arg('sender', 'inline');
+// Depth semantics differ per mode. Inline: bookkeeping of unconfirmed sends whose
+// completion callbacks share this busy main loop — needs 8 at 6×30fps (depth 2 →
+// ~10 fps sent, depth 4 → ~19, depth 8 → paint rate; measured 2026-08-18). Native:
+// real staging-slot pipeline on a dedicated worker; 2 suffices (and each slot is a
+// GPU staging texture — the module clamps at 4).
+const NDI_DEPTH_RAW = arg('ndi-depth', '');
+const NDI_DEPTH = NDI_DEPTH_RAW ? parseInt(NDI_DEPTH_RAW, 10) : (SENDER_MODE === 'native' ? 2 : 8);
+// Consecutive sendTexture open/copy failures before a surface falls back to the
+// CPU bitmap path (same native sender, so no NDI name churn).
+const TEX_FAIL_LIMIT = 30;
 
 if (!CONFIG_PATH) { console.error('[vhost] --config=<path> is required'); app.exit(2); }
 
@@ -128,21 +136,91 @@ function makeSurface(source, defaults) {
 		state: 'starting', rebuilds: 0, requestedStop: false,
 		paints: 0, lastPaints: 0, lastTime: Date.now(),
 		copyNs: 0n, copies: 0,
+		// native mode: 'texture' (GPU handle path) with one-way per-surface fallback
+		// to 'bitmap' (toBitmap → native sendFrame — still off-main for the send).
+		frameMode: SENDER_MODE === 'native' ? 'texture' : 'bitmap',
+		texFails: 0,
 		backoffTimer: null, healthyTimer: null,
 	};
 }
 
+// Native-mode paint path. Texture mode: forward the NT handle (native does
+// open+copy+flush on this thread — command submission only, µs) and release the
+// texture immediately, per the Electron OSR contract. copy= stat here measures
+// exactly that main-thread submit cost. Bitmap mode: toBitmap stays (only pixel
+// access at the JS layer) but submit/completion still leave the main loop.
+function paintNative(s, event, image) {
+	if (!s.sender) { if (event.texture) event.texture.release(); return; }
+	if (s.frameMode === 'texture') {
+		const tex = event.texture;
+		if (!tex) return; // shared-texture window always carries one; count nothing
+		s.paints++;
+		const ti = tex.textureInfo;
+		const hbuf = ti.handle && ti.handle.ntHandle ? ti.handle.ntHandle : ti.sharedTextureHandle;
+		let r = -1;
+		const t0 = process.hrtime.bigint();
+		try {
+			if (hbuf) {
+				r = s.sender.sendTexture(hbuf,
+					ti.visibleRect ? ti.visibleRect.width : s.video.width,
+					ti.visibleRect ? ti.visibleRect.height : s.video.height,
+					ti.pixelFormat);
+			}
+		} finally {
+			tex.release();
+		}
+		s.copyNs += process.hrtime.bigint() - t0;
+		s.copies++;
+		if (r === -1) {
+			if (++s.texFails >= TEX_FAIL_LIMIT) fallbackToBitmap(s);
+		} else if (s.texFails) {
+			s.texFails = 0;
+		}
+		return;
+	}
+	s.paints++;
+	const size = image.getSize();
+	const t0 = process.hrtime.bigint();
+	const bitmap = image.toBitmap();
+	s.copyNs += process.hrtime.bigint() - t0;
+	s.copies++;
+	s.sender.sendFrame(bitmap, size.width, size.height, size.width * 4);
+}
+
+// One-way per-surface degrade: persistent open/copy failures mean the GPU handle
+// contract isn't holding for this surface — swap to a plain-offscreen window and
+// the CPU path on the SAME native sender (no NDI name churn). The old window is
+// parked, never destroyed (the live-destroy wedge).
+const parkedWindows = [];
+function fallbackToBitmap(s) {
+	const err = s.sender && s.sender.stats ? s.sender.stats().lastError : null;
+	console.error(`[vhost] ${s.name} texture path failing persistently (${TEX_FAIL_LIMIT} consecutive)${err ? ': ' + err : ''} — falling back to CPU bitmap path`);
+	emit('window-gone', s.name, { reason: 'texture-fallback' });
+	s.frameMode = 'bitmap';
+	s.texFails = 0;
+	parkWindow(s);
+	if (s.win) parkedWindows.push(s.win);
+	s.win = null; // next startSurface builds a plain-offscreen window
+	s.rebuilds = 0;
+	startSurface(s);
+}
+
 function buildWindow(s) {
+	const useTexture = SENDER_MODE === 'native' && s.frameMode === 'texture';
 	const win = new BrowserWindow({
 		show: false,
 		width: s.video.width,
 		height: s.video.height,
-		webPreferences: { offscreen: true, backgroundThrottling: false },
+		webPreferences: {
+			offscreen: useTexture ? { useSharedTexture: true } : true,
+			backgroundThrottling: false,
+		},
 	});
 	win.webContents.setFrameRate(s.video.fps);
 
 	win.webContents.on('paint', (event, dirty, image) => {
-		if (s.retired) return; // parked window may still paint about:blank
+		if (s.retired) { if (event.texture) event.texture.release(); return; } // parked window may still paint about:blank
+		if (SENDER_MODE === 'native') return paintNative(s, event, image);
 		if (SENDER_MODE !== 'proc' && !s.sender) return;
 		s.paints++;
 		const size = image.getSize();
@@ -226,7 +304,9 @@ async function startSurface(s) {
 			emit('ready', s.name, { ndiName: s.ndiName });
 		}
 	} else if (!s.sender) {
-		s.sender = await ndi.create(s.ndiName, { fps: s.video.fps, depth: NDI_DEPTH });
+		s.sender = SENDER_MODE === 'native'
+			? await ndiNative.create(s.ndiName, { fps: s.video.fps, depth: NDI_DEPTH })
+			: await ndi.create(s.ndiName, { fps: s.video.fps, depth: NDI_DEPTH });
 		emit('ready', s.name, { ndiName: s.ndiName });
 	}
 	// Reuse an existing window whenever possible — see the parkWindow note.
@@ -384,6 +464,15 @@ app.whenReady().then(async () => {
 		return;
 	}
 
+	// A broken native module must degrade to the working CPU pipeline, not a dead
+	// host: fall back to inline for the whole process if the binary won't load.
+	if (SENDER_MODE === 'native' && !ndiNative.available()) {
+		console.error(`[vhost] --sender=native but ndi-texture-send failed to load (${ndiNative.loadError() && ndiNative.loadError().message}) — falling back to inline`);
+		emit('native-unavailable', 'videohost', {});
+		SENDER_MODE = 'inline';
+		for (const [, s] of surfaces) s.frameMode = 'bitmap';
+	}
+
 	const sources = config.sources.filter(src => !ONLY_SOURCE || src.name === ONLY_SOURCE);
 	console.log(`[vhost] hosting ${sources.length} video surface(s) from ${CONFIG_PATH} (sender=${SENDER_MODE}, depth=${NDI_DEPTH})`);
 	if (SENDER_MODE === 'proc') spawnSenderProc();
@@ -418,8 +507,16 @@ app.whenReady().then(async () => {
 			const copyMs = s.copies ? Number(s.copyNs / BigInt(s.copies)) / 1e6 : 0;
 			s.copyNs = 0n; s.copies = 0;
 			const conn = SENDER_MODE === 'proc' ? 'proc' : (s.sender ? s.sender.connections() : '-');
-			console.log(`[vhost] ${s.name} paintFps=${paintFps.toFixed(1)} sent=${st.sent} dropped=${st.dropped} lat=${st.latencyMs}ms copy=${copyMs.toFixed(1)}ms conn=${conn} rssMB=${rssMB}`);
-			emit('stats', s.name, { paintFps: +paintFps.toFixed(1), sent: st.sent, dropped: st.dropped, latencyMs: st.latencyMs, copyMs: +copyMs.toFixed(1), rssMB });
+			// Native mode: copy= is the main-thread submit cost (texture mode) or the
+			// toBitmap copy (bitmap fallback); map=/q= are the worker-side GPU wait and
+			// staging-slot occupancy — keep them printed next to the comparable stats.
+			const nativeBits = SENDER_MODE === 'native'
+				? ` mode=${s.frameMode === 'texture' ? 'tex' : 'bmp'} map=${st.mapMs || 0}ms q=${st.inFlight || 0}${st.openFails ? ' openFails=' + st.openFails : ''}`
+				: '';
+			console.log(`[vhost] ${s.name} paintFps=${paintFps.toFixed(1)} sent=${st.sent} dropped=${st.dropped} lat=${st.latencyMs}ms copy=${copyMs.toFixed(1)}ms${nativeBits} conn=${conn} rssMB=${rssMB}`);
+			emit('stats', s.name, Object.assign(
+				{ paintFps: +paintFps.toFixed(1), sent: st.sent, dropped: st.dropped, latencyMs: st.latencyMs, copyMs: +copyMs.toFixed(1), rssMB },
+				SENDER_MODE === 'native' ? { frameMode: s.frameMode, mapMs: st.mapMs || 0, openFails: st.openFails || 0 } : {}));
 		}
 	}, 10000);
 

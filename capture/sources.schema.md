@@ -12,7 +12,8 @@ surface** — edits here take effect only via per-plane rebuild.
     "ndiPrefix": "CC-",               // ndiName fallback = ndiPrefix + name (use-case-neutral; never assume a purpose-specific prefix)
     "videoTopology": "consolidated",  // "consolidated" (one video-host process, default; Session 5 bench) | "per-player" (one slice-main process per player)
     "video": { "width": 1920, "height": 1080, "fps": 30,
-               "ndiDepth": 8 },       // optional: NDI send-pipeline depth for the consolidated host (default 8; per-player workers use 2)
+               "ndiDepth": 8,         // optional: NDI send-pipeline depth for the consolidated host (inline default 8, native default 2; per-player workers use 2)
+               "senderMode": "inline" }, // optional: "inline" (grandiose on the host main loop) | "native" (Session 6 shared-texture module, off-main frame path; falls back to inline if the binary won't load) | "proc" (rejected, kept for re-testing)
     "audio": { "audioOutputDevice": "VBMatrix In 6" }  // label fragment unique to ONE endpoint — see below
   },
   "sources": [

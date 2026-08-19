@@ -117,6 +117,12 @@ function workerSpecs() {
 		if (config.defaults && config.defaults.video && config.defaults.video.ndiDepth) {
 			args.push(`--ndi-depth=${config.defaults.video.ndiDepth}`);
 		}
+		// Session 6: 'inline' (default) | 'native' (shared-texture readback module,
+		// falls back to inline in-host if the binary won't load) | 'proc' (rejected,
+		// kept for re-testing). CLI --video-sender overrides config.
+		const senderMode = argOf('video-sender',
+			config.defaults && config.defaults.video && config.defaults.video.senderMode);
+		if (senderMode) args.push(`--sender=${senderMode}`);
 		specs.push({
 			key: VIDEOHOST_KEY, player: 'videohost', plane: 'video', consolidated: true,
 			entry: path.join(__dirname, 'video-host.js'),
