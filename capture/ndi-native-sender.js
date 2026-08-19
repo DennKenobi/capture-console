@@ -59,7 +59,8 @@ async function create(name, { fps = 30, depth = 2, onLog = console.log } = {}) {
 			};
 		},
 		connections() { return sender.connections(); },
-		tally() { return null; }, // native module doesn't surface tally (Phase 4 concern)
+		/** Downstream tally (Session 8): { changed, on_program, on_preview }. */
+		tally() { return sender.tally(); },
 		async drain(timeoutMs = 500) {
 			const t0 = Date.now();
 			while (sender.stats().queued > 0 && Date.now() - t0 < timeoutMs) {

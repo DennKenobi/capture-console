@@ -112,6 +112,7 @@ class TextureSender : public Napi::ObjectWrap<TextureSender> {
             InstanceMethod("sendFrame", &TextureSender::SendFrame),
             InstanceMethod("stats", &TextureSender::Stats),
             InstanceMethod("connections", &TextureSender::Connections),
+            InstanceMethod("tally", &TextureSender::Tally),
             InstanceMethod("destroy", &TextureSender::Destroy),
         });
   }
@@ -317,6 +318,22 @@ class TextureSender : public Napi::ObjectWrap<TextureSender> {
   Napi::Value Connections(const Napi::CallbackInfo& info) {
     if (!ndi_) return Napi::Number::New(info.Env(), -1);
     return Napi::Number::New(info.Env(), NDIlib_send_get_no_connections(ndi_, 0));
+  }
+
+  // Session 8 Part C: downstream tally, polled on the host's stats cadence (never
+  // a per-frame callback). timeout 0 = return the current state immediately;
+  // verified end-to-end against a receiver calling NDIlib_recv_set_tally
+  // (<0.5 s propagation, clears when the tallying receiver disconnects).
+  Napi::Value Tally(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (!ndi_) return env.Null();
+    NDIlib_tally_t t{};
+    bool changed = NDIlib_send_get_tally(ndi_, &t, 0);
+    Napi::Object o = Napi::Object::New(env);
+    o.Set("changed", Napi::Boolean::New(env, changed));
+    o.Set("on_program", Napi::Boolean::New(env, t.on_program));
+    o.Set("on_preview", Napi::Boolean::New(env, t.on_preview));
+    return o;
   }
 
   // Exit-path only. NDIlib_send_destroy can block with work in flight — the

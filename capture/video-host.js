@@ -524,9 +524,18 @@ app.whenReady().then(async () => {
 			const nativeBits = SENDER_MODE === 'native'
 				? ` mode=${s.frameMode === 'texture' ? 'tex' : 'bmp'} map=${st.mapMs || 0}ms q=${st.inFlight || 0}${st.openFails ? ' openFails=' + st.openFails : ''}`
 				: '';
-			console.log(`[vhost] ${s.name} paintFps=${paintFps.toFixed(1)} sent=${st.sent} dropped=${st.dropped} lat=${st.latencyMs}ms copy=${copyMs.toFixed(1)}ms${nativeBits} conn=${conn} rssMB=${rssMB}`);
+			// Session 8 Part C: downstream tally, polled on this existing cadence (both
+			// sender modes expose tally(); NDI-native verified — see fork ledger).
+			let tally = null;
+			try {
+				const t = s.sender && s.sender.tally ? s.sender.tally() : null;
+				if (t) tally = { program: !!t.on_program, preview: !!t.on_preview };
+			} catch { /* tally is decoration — never let it break stats */ }
+			const tallyBits = tally ? ` tally=${tally.program ? 'PGM' : tally.preview ? 'PVW' : '-'}` : '';
+			console.log(`[vhost] ${s.name} paintFps=${paintFps.toFixed(1)} sent=${st.sent} dropped=${st.dropped} lat=${st.latencyMs}ms copy=${copyMs.toFixed(1)}ms${nativeBits} conn=${conn}${tallyBits} rssMB=${rssMB}`);
 			emit('stats', s.name, Object.assign(
 				{ paintFps: +paintFps.toFixed(1), sent: st.sent, dropped: st.dropped, latencyMs: st.latencyMs, copyMs: +copyMs.toFixed(1), rssMB },
+				tally ? { tally } : {},
 				SENDER_MODE === 'native' ? { frameMode: s.frameMode, mapMs: st.mapMs || 0, openFails: st.openFails || 0 } : {}));
 		}
 	}, 10000);
