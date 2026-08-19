@@ -8,7 +8,8 @@
 //       [--source=<name>] [--plane=video|audio] [--log=<file>] [--status-json]
 //
 // stdin commands: status | reload <player> <plane> | stop <player> <plane>
-//                 | start <player> <plane> | quit
+//                 | start <player> <plane> | mute <player> [audio]
+//                 | unmute <player> [audio] | rescan | quit
 'use strict';
 
 const { spawn } = require('child_process');
@@ -168,6 +169,7 @@ function spawnWorker(w) {
 	w.state = 'starting';
 	w.startedAt = Date.now();
 	w.requestedStop = false;
+	w.muted = false; // a fresh page starts unmuted; the console re-asserts intent
 	// The console runs us under ELECTRON_RUN_AS_NODE; that var must NOT reach the
 	// electron.exe workers or they would boot as plain Node.
 	const env = Object.assign({}, process.env);
@@ -237,6 +239,13 @@ function handleWorkerEvent(w, ev) {
 		case 'stats':
 			w.lastStats = ev;
 			w.lastStatsAt = Date.now();
+			// audio workers report muted in stats too — recovers a missed 'muted' line
+			if (typeof ev.muted === 'boolean') w.muted = ev.muted;
+			break;
+		case 'muted':
+			w.muted = !!ev.muted;
+			log(`[sup] ${w.spec.key} page mute -> ${w.muted}`);
+			emitSup('muted', { key: w.spec.key, muted: w.muted });
 			break;
 		case 'exiting':
 			log(`[sup] ${w.spec.key} exiting (${ev.reason})`);
@@ -347,6 +356,7 @@ function writeStatusFile() {
 			state: w.state,
 			pid: w.child ? w.pid : null,
 			restarts: w.restarts,
+			muted: !!w.muted,
 			lastStats: w.lastStats || null,
 			lastStatsAt: w.lastStatsAt || null,
 			playerStats: w.playerStats || null,
@@ -430,6 +440,17 @@ async function handleCommand(line) {
 	if (!cmd) return;
 	if (cmd === 'quit') return shutdown();
 	if (cmd === 'status') return statusReport();
+	// mute/unmute: app-layer page mute on the audio worker (SESSION8-SPEC §2) —
+	// forwarded to the worker's polled audio.cmd file, never a worker rebuild.
+	if (cmd === 'mute' || cmd === 'unmute') {
+		if (plane && plane !== 'audio') return console.log(`${cmd} applies to the audio plane only`);
+		const w = getWorker(`${player}/audio`);
+		if (!w) return console.log(`unknown worker: ${player}/audio`);
+		log(`[sup] ${cmd.toUpperCase()} ${player}/audio`);
+		emitSup(cmd, { key: w.spec.key });
+		forwardToAudioWorker(w, cmd);
+		return;
+	}
 	if (['reload', 'stop', 'start'].includes(cmd)) {
 		const key = `${player}/${plane}`;
 		let w = getWorker(key);
@@ -469,7 +490,7 @@ async function handleCommand(line) {
 		return;
 	}
 	if (cmd === 'rescan') return void rescan();
-	console.log('commands: status | reload <player> <plane> | stop <player> <plane> | start <player> <plane> | rescan | quit');
+	console.log('commands: status | reload <player> <plane> | stop <player> <plane> | start <player> <plane> | mute <player> [audio] | unmute <player> [audio] | rescan | quit');
 }
 
 readline.createInterface({ input: process.stdin }).on('line', handleCommand);
@@ -480,6 +501,17 @@ readline.createInterface({ input: process.stdin }).on('line', handleCommand);
 function forwardToVideohost(line) {
 	try { fs.appendFileSync(path.join(configDir, 'vhost.cmd'), line + '\n'); } catch (err) {
 		log(`[sup] vhost forward failed: ${err.message}`);
+	}
+}
+
+// Audio-worker command forwarding (Session 8: mute/unmute only): append to the
+// audio.cmd file inside the worker's data dir — same polled-file pattern.
+function forwardToAudioWorker(w, line) {
+	const dirArg = w.spec.args.find(a => a.startsWith('--user-data-dir='));
+	if (!dirArg) return log(`[sup] ${w.spec.key} has no data dir; cannot forward ${line}`);
+	const dir = dirArg.split('=').slice(1).join('=');
+	try { fs.appendFileSync(path.join(dir, 'audio.cmd'), line + '\n'); } catch (err) {
+		log(`[sup] audio forward failed (${w.spec.key}): ${err.message}`);
 	}
 }
 

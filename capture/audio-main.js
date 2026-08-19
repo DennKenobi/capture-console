@@ -4,8 +4,16 @@
 // everything is baked into the URL (&novideo&audiooutput=…&channeloffset=…), immutable.
 // This module stays free of EC internals and NDI by design (ASS portability, §9).
 //
+// Session 8 adds the ONE sanctioned app-layer surface (KICKOFF Phase 4 "page volume,
+// not routing"): Electron-level page mute via a polled <user-data-dir>/audio.cmd file
+// (stdin is not readable on Windows — Session 5). setAudioMuted touches nothing but
+// the page's audio output — never the Web Audio graph, never the page, never routing.
+//
 //   electron ./capture/audio-main.js --url="…" [--user-data-dir=…] [--status-json] [--duration=s]
+//   audio.cmd lines: mute | unmute
 const { app, BrowserWindow, session } = require('electron');
+const fs = require('fs');
+const path = require('path');
 
 function arg(name, dflt) {
 	const hit = process.argv.find(a => a.startsWith(`--${name}=`));
@@ -61,10 +69,35 @@ app.whenReady().then(async () => {
 	});
 	win.webContents.on('did-finish-load', () => { console.log('[audio] page loaded'); emit('loaded', {}); });
 
+	// Mute surface: poll the per-worker command file at 500 ms (mute is a live operator
+	// action — the 2 s supervisor cadence already dominates latency). Only mute/unmute
+	// travel here, both idempotent, so a line left stale across a worker restart is
+	// harmless (the console reconciles intent vs reported state anyway).
+	if (USER_DATA_DIR) {
+		const cmdFile = path.join(USER_DATA_DIR, 'audio.cmd');
+		setInterval(() => {
+			let text;
+			try { text = fs.readFileSync(cmdFile, 'utf8'); } catch { return; }
+			if (!text.trim()) return;
+			try { fs.writeFileSync(cmdFile, ''); } catch {}
+			for (const raw of text.split(/\r?\n/)) {
+				const cmd = raw.trim();
+				if (cmd !== 'mute' && cmd !== 'unmute') {
+					if (cmd) console.log(`[audio] unknown cmd: ${cmd}`);
+					continue;
+				}
+				const want = cmd === 'mute';
+				win.webContents.setAudioMuted(want);
+				console.log(`[audio] page mute -> ${want}`);
+				emit('muted', { muted: want });
+			}
+		}, 500);
+	}
+
 	setInterval(() => {
 		const rssMB = Math.round(process.memoryUsage().rss / 1048576);
 		console.log(`[audio] rssMB=${rssMB}`);
-		emit('stats', { rssMB });
+		emit('stats', { rssMB, muted: win.webContents.isAudioMuted() });
 	}, 10000);
 
 	if (DURATION_S > 0) {
