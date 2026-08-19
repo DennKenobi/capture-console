@@ -48,6 +48,23 @@
   .mutedchip { background: #fde3e3; color: #a82a2a; font-size: 10px; font-weight: 700;
                padding: 1px 4px; border-radius: 3px; }
   button.active { background: #ffd77a; border-color: #b58105; }
+  /* Session 8 Part A: Audio Manager grid */
+  .amdev { display: inline-block; vertical-align: top; margin-right: 16px; }
+  .amdevname { font-size: 12px; color: #33515e; margin-bottom: 4px; }
+  .amtbl { width: auto; }
+  .amtbl td { padding: 3px 8px; }
+  .amch { color: #5c7080; }
+  .ammeter .meter { width: 90px; }
+  .amcell { min-width: 130px; cursor: pointer; }
+  .amcell:hover { background: #eef4f7; }
+  .amempty { color: #b8c4ca; }
+  .amchip { padding: 1px 8px; border: 1px solid #8aa5b3; border-radius: 10px; background: #f0f5f7; }
+  .amchip.selected { background: #cfe8ff; border-color: #1a6fb5; box-shadow: 0 0 0 2px #cfe8ff; }
+  .amchip.staged { background: #ffe9b3; border-color: #b58105; }
+  .ampool { margin-top: 8px; }
+  .amstagedlist { margin-top: 6px; color: #7a5a05; font-size: 12px; }
+  .ambar { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+  #ammsg { color: #a82a2a; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -98,6 +115,18 @@
       <button id="btnCancel">Cancel</button>
       <span style="color:#5c7080;font-size:12px">Saving edits the file only — use Reload (existing player) or Rescan (added/removed player) to apply.</span>
     </p>
+  </div>
+
+  <h1 style="margin-top:16px">Audio Manager</h1>
+  <div id="amhelp" style="color:#5c7080;font-size:12px;margin-bottom:6px">
+    Click a player chip, then a channel row, to stage a move. Connect saves the config and
+    rebuilds exactly that player's audio plane (~3–7 s gap for them; siblings untouched).
+  </div>
+  <div id="amgrid"></div>
+  <div class="ambar">
+    <button id="btnConnect" disabled>Connect</button>
+    <button id="btnDiscard" disabled>Discard</button>
+    <span id="ammsg"></span>
   </div>
 
   <details><summary>Raw supervisor status</summary><pre id="raw"></pre></details>

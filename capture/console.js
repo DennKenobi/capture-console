@@ -143,6 +143,152 @@ function updateMeters() {
 	}
 }
 
+// ---- Audio Manager grid (Session 8 Part A, KICKOFF Phase 4 core) ------------
+// Mutable UX on immutable infrastructure: the grid is a sources.json editor with
+// a Connect button. Rows = channels 1-8 of each distinct endpoint; cells show the
+// assignment + the LIVE per-channel meter (same meter-update stream as the rows).
+// Click a player chip, then a channel, to STAGE a move; Connect saves the config
+// and issues `reload <player> audio` — the exact Session 5 channelOffset path.
+// Conflicts (occupied channel) are rejected inline before anything is staged.
+
+let amSelected = null;        // player chip awaiting a channel click
+const amStaged = new Map();   // player -> { device, offset } staged, unsaved
+let amGridKey = '';           // structure fingerprint (targeted-update discipline)
+let amDeviceList = [];        // device order for meter fill ids
+
+function setAmMsg(text) { $('ammsg').textContent = text || ''; }
+
+function amAssignments() {
+	// current config truth: device -> [8 channel slots], plus unassigned players
+	const targets = meterTargets();
+	const devices = new Map();
+	const unassigned = [];
+	for (const [player, t] of Object.entries(targets)) {
+		if (!t.device) { unassigned.push(player); continue; }
+		if (!devices.has(t.device)) devices.set(t.device, new Array(8).fill(null));
+		if (t.offset !== null) devices.get(t.device)[t.offset] = player;
+		else unassigned.push(player);
+	}
+	return { devices, unassigned };
+}
+
+function amStagedView() {
+	// assignments with staged moves applied — what the grid displays
+	const view = amAssignments();
+	for (const [player, mv] of amStaged) {
+		for (const arr of view.devices.values()) {
+			const i = arr.indexOf(player);
+			if (i >= 0) arr[i] = null;
+		}
+		const un = view.unassigned.indexOf(player);
+		if (un >= 0) view.unassigned.splice(un, 1);
+		if (!view.devices.has(mv.device)) view.devices.set(mv.device, new Array(8).fill(null));
+		view.devices.get(mv.device)[mv.offset] = player;
+	}
+	return view;
+}
+
+function amChip(player) {
+	const cls = ['amchip'];
+	if (amSelected === player) cls.push('selected');
+	if (amStaged.has(player)) cls.push('staged');
+	return `<button class="${cls.join(' ')}" data-amplayer="${player}">${player}</button>`;
+}
+
+function renderGrid() {
+	if (!lastState || !lastState.config || !$('amgrid')) return;
+	const view = amStagedView();
+	const devices = [...view.devices.keys()].sort();
+	const key = JSON.stringify([devices.map(dv => view.devices.get(dv)), view.unassigned, amSelected, [...amStaged]]);
+	if (key !== amGridKey) {
+		amGridKey = key;
+		amDeviceList = devices;
+		let html = '';
+		devices.forEach((dev, d) => {
+			const slots = view.devices.get(dev);
+			html += `<div class="amdev"><div class="amdevname mono">${dev}</div><table class="amtbl">`;
+			for (let ch = 0; ch < 8; ch++) {
+				const p = slots[ch];
+				html += `<tr>
+					<td class="mono amch">ch${ch + 1}</td>
+					<td class="ammeter"><div class="meter"><div class="meterfill" id="amfill-${d}-${ch}"></div></div></td>
+					<td class="amcell" data-amch="${ch}" data-amdev="${dev}">${p ? amChip(p) : '<span class="amempty">—</span>'}</td>
+				</tr>`;
+			}
+			html += '</table></div>';
+		});
+		const pool = view.unassigned.map(amChip).join(' ') || '<span class="amempty">(none)</span>';
+		html += `<div class="ampool">Unassigned: ${pool}</div>`;
+		if (amStaged.size) {
+			const list = [...amStaged].map(([p, mv]) => `${p} → ch${mv.offset + 1}`).join(', ');
+			html += `<div class="amstagedlist">staged: ${list}</div>`;
+		}
+		$('amgrid').innerHTML = html;
+	}
+	$('btnConnect').disabled = !amStaged.size;
+	$('btnConnect').textContent = amStaged.size ? `Connect (${amStaged.size})` : 'Connect';
+	$('btnDiscard').disabled = !amStaged.size && !amSelected;
+	updateGridMeters();
+}
+
+function updateGridMeters() {
+	const now = Date.now();
+	amDeviceList.forEach((dev, d) => {
+		const data = meterData[dev];
+		const fresh = data && now - (meterLastSeen[dev] || 0) < 2500;
+		for (let ch = 0; ch < 8; ch++) {
+			const fill = $(`amfill-${d}-${ch}`);
+			if (!fill) continue;
+			const wrap = fill.parentElement;
+			if (!fresh) { wrap.classList.add('dead'); continue; }
+			wrap.classList.remove('dead');
+			const peak = (data.peaks && data.peaks[ch]) || 0;
+			fill.style.width = `${Math.min(100, Math.round(peak * 100))}%`;
+			fill.classList.toggle('hot', peak > 0.02);
+		}
+	});
+}
+
+function amCellClick(cell) {
+	const ch = parseInt(cell.dataset.amch, 10);
+	const dev = cell.dataset.amdev;
+	if (!amSelected) return setAmMsg('click a player chip first, then a channel');
+	const view = amStagedView();
+	const occupant = view.devices.get(dev) ? view.devices.get(dev)[ch] : null;
+	if (occupant && occupant !== amSelected) {
+		return setAmMsg(`ch${ch + 1} is ${occupant}'s — move ${occupant} first`);
+	}
+	const t = meterTargets()[amSelected];
+	if (t && t.device === dev && t.offset === ch) amStaged.delete(amSelected); // back to current spot = unstage
+	else amStaged.set(amSelected, { device: dev, offset: ch });
+	amSelected = null;
+	setAmMsg('');
+	renderGrid();
+}
+
+async function amConnect() {
+	if (!amStaged.size || !lastState || !lastState.config) return;
+	const config = JSON.parse(JSON.stringify(lastState.config));
+	const defDev = (config.defaults && config.defaults.audio && config.defaults.audio.audioOutputDevice) || '';
+	const moved = [];
+	for (const [player, mv] of amStaged) {
+		const src = config.sources.find(s => s.name === player);
+		if (!src) continue;
+		src.audio = src.audio || {};
+		src.audio.channelOffset = mv.offset;
+		// pin the device only when it differs from what the player already resolves to
+		if (mv.device !== (src.audio.audioOutputDevice || defDev)) src.audio.audioOutputDevice = mv.device;
+		moved.push(player);
+	}
+	const res = await window.cc.saveConfig(config);
+	if (!res.ok) return setAmMsg('rejected: ' + res.errors.join('; ')); // validateConfig conflicts surface here
+	for (const p of moved) await window.cc.command(`reload ${p} audio`);
+	amStaged.clear();
+	amSelected = null;
+	setAmMsg(`connected: ${moved.join(', ')} — audio plane rebuilding (~3–7 s, siblings untouched)`);
+	tick();
+}
+
 function render(state) {
 	lastState = state;
 	$('cfgPath').textContent = state.configPath;
@@ -224,6 +370,7 @@ function render(state) {
 		stog.classList.toggle('active', mix.solo === name);
 	}
 	updateMeters();
+	renderGrid();
 }
 
 async function tick() {
@@ -364,6 +511,14 @@ document.body.addEventListener('click', async e => {
 		await window.cc.audioSolo(cur === name ? null : name); // re-click clears solo
 		return tick();
 	}
+	// Audio Manager grid: chip click selects (chips sit inside cells — check first)
+	if (e.target.dataset && e.target.dataset.amplayer) {
+		amSelected = amSelected === e.target.dataset.amplayer ? null : e.target.dataset.amplayer;
+		setAmMsg(amSelected ? `now click a channel for ${amSelected}` : '');
+		return renderGrid();
+	}
+	const amCell = e.target.closest ? e.target.closest('[data-amch]') : null;
+	if (amCell) return amCellClick(amCell);
 });
 
 $('btnPrevAll').addEventListener('click', async () => {
@@ -377,6 +532,15 @@ window.cc.onMeterUpdate(update => {
 	meterData[update.device] = update;
 	meterLastSeen[update.device] = Date.now();
 	updateMeters();
+	updateGridMeters();
+});
+
+$('btnConnect').addEventListener('click', amConnect);
+$('btnDiscard').addEventListener('click', () => {
+	amStaged.clear();
+	amSelected = null;
+	setAmMsg('');
+	renderGrid();
 });
 
 $('btnStart').addEventListener('click', async () => {
