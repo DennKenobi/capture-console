@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('cc', {
 	command: line => ipcRenderer.invoke('command', line),
 	startSupervisor: () => ipcRenderer.invoke('start-supervisor'),
 	previewToggle: (scope, on) => ipcRenderer.invoke('preview-toggle', scope, on),
+	audioMute: (player, on) => ipcRenderer.invoke('audio-mute', player, on),
+	audioSolo: player => ipcRenderer.invoke('audio-solo', player),
 	onPreviewFrame: cb => ipcRenderer.on('preview-frame', (e, frame) => cb(frame)),
 	onMeterUpdate: cb => ipcRenderer.on('meter-update', (e, update) => cb(update)),
 });

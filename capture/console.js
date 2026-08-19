@@ -24,6 +24,8 @@ function planeCell(worker, playerStats) {
 	if (!worker) return '<span class="st unknown">no supervisor</span>';
 	const st = worker.state || 'unknown';
 	let html = `<span class="st ${st}">${st}</span>`;
+	// worker-reported truth (Session 8): the meter dying alongside this chip is the proof
+	if (worker.muted) html += ' <span class="mutedchip">MUTED</span>';
 	if (worker.pid) html += ` <span class="mono">pid ${worker.pid}</span>`;
 	if (worker.restarts) html += ` <span class="mono">restarts ${worker.restarts}</span>`;
 	const stats = playerStats || worker.lastStats;
@@ -177,7 +179,9 @@ function render(state) {
 					<button data-prevtoggle="${source.name}" id="ptog-${source.name}">preview</button></div>
 			</div></td>
 			<td><div class="meterwrap"><div class="meter" id="meter-${source.name}"><div class="meterfill" id="mfill-${source.name}"></div></div><span class="mono mch" id="mch-${source.name}"></span></div>
-				<span id="acell-${source.name}"></span><br>${btns(source.name, 'audio')}</td>
+				<span id="acell-${source.name}"></span><br>${btns(source.name, 'audio')}
+				<button data-mute="${source.name}" id="mute-${source.name}">mute</button>
+				<button data-solo="${source.name}" id="solo-${source.name}">solo</button></td>
 			<td><button data-edit="${source.name}">Edit</button> <button data-remove="${source.name}">Remove</button></td>
 		</tr>`).join('');
 	}
@@ -209,6 +213,15 @@ function render(state) {
 		// meter channel label
 		const t = meterMap[name];
 		$(`mch-${name}`).textContent = t && t.offset !== null ? `ch${t.offset + 1}` : 'ch1/2';
+
+		// mute/solo buttons reflect INTENT (console state); the MUTED chip + dead
+		// meter reflect worker-reported truth — they converge via muteSync
+		const mix = state.audioMix || { solo: null, muted: [] };
+		const mtog = $(`mute-${name}`);
+		mtog.textContent = mix.muted.includes(name) ? 'unmute' : 'mute';
+		mtog.classList.toggle('active', mix.muted.includes(name));
+		const stog = $(`solo-${name}`);
+		stog.classList.toggle('active', mix.solo === name);
 	}
 	updateMeters();
 }
@@ -337,6 +350,18 @@ document.body.addEventListener('click', async e => {
 		const name = e.target.dataset.prevtoggle;
 		const isOff = lastState && lastState.previews && lastState.previews.rowOff.includes(name);
 		await window.cc.previewToggle(name, isOff); // off -> on, on -> off
+		return tick();
+	}
+	if (e.target.dataset && e.target.dataset.mute) {
+		const name = e.target.dataset.mute;
+		const on = !(lastState && lastState.audioMix && lastState.audioMix.muted.includes(name));
+		await window.cc.audioMute(name, on);
+		return tick();
+	}
+	if (e.target.dataset && e.target.dataset.solo) {
+		const name = e.target.dataset.solo;
+		const cur = lastState && lastState.audioMix ? lastState.audioMix.solo : null;
+		await window.cc.audioSolo(cur === name ? null : name); // re-click clears solo
 		return tick();
 	}
 });

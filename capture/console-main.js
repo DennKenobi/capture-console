@@ -154,6 +154,45 @@ function metersShutdown() {
 	meters.clear();
 }
 
+// ---- audio mute/solo (Session 8 Part B) ------------------------------------
+// Live operator actions, NOT desired state (SESSION8-SPEC §2): intent lives here
+// in console memory (like the preview toggles), truth lives in the worker and is
+// read back from supervisor-status.json. Solo = mute all others. A worker that
+// restarts comes back unmuted, so a rate-limited reconcile loop re-asserts intent
+// against reported state through the sanctioned path (supervisor.cmd → audio.cmd).
+
+const muteIntent = new Set(); // players individually muted by the operator
+let soloPlayer = null;
+const muteCmdAt = new Map(); // player -> ms of last issued command (re-send guard)
+// Command → worker apply ≤2.5 s → status file ≤2 s: don't re-send inside that
+// propagation window or every toggle double-fires.
+const MUTE_RESEND_MS = 8000;
+
+function desiredMute(player) {
+	return muteIntent.has(player) || (soloPlayer !== null && player !== soloPlayer);
+}
+
+function muteSync(force) {
+	if (!supervisorPid()) return;
+	const status = readJson(statusPath);
+	if (!status || Date.now() - status.at > 8000) return;
+	const audioWorkers = status.workers.filter(w => w.plane === 'audio' && !w.consolidated);
+	// drop intent for players that left the worker table (rescan-removed): a
+	// re-added player starting silently muted would be an operator surprise
+	const present = new Set(audioWorkers.map(w => w.player));
+	for (const p of [...muteIntent]) if (!present.has(p)) muteIntent.delete(p);
+	if (soloPlayer && !present.has(soloPlayer)) soloPlayer = null;
+	for (const w of audioWorkers) {
+		if (w.state !== 'running') continue;
+		const want = desiredMute(w.player);
+		if (want === !!w.muted) continue;
+		const last = muteCmdAt.get(w.player) || 0;
+		if (!force && Date.now() - last < MUTE_RESEND_MS) continue;
+		muteCmdAt.set(w.player, Date.now());
+		try { fs.appendFileSync(cmdPath, `${want ? 'mute' : 'unmute'} ${w.player} audio\n`); } catch {}
+	}
+}
+
 // ---- IPC surface ----------------------------------------------------------
 
 ipcMain.handle('state', () => {
@@ -174,7 +213,20 @@ ipcMain.handle('state', () => {
 			rowOff: [...previewRowOff],
 			states: previews.states(),
 		},
+		audioMix: { solo: soloPlayer, muted: [...muteIntent] },
 	};
+});
+
+ipcMain.handle('audio-mute', (e, player, on) => {
+	if (on) muteIntent.add(player); else muteIntent.delete(player);
+	muteSync(true);
+	return { ok: true };
+});
+
+ipcMain.handle('audio-solo', (e, player) => {
+	soloPlayer = player || null;
+	muteSync(true);
+	return { ok: true };
 });
 
 ipcMain.handle('preview-toggle', (e, scope, on) => {
@@ -206,7 +258,7 @@ ipcMain.handle('save-config', (e, config) => {
 });
 
 ipcMain.handle('command', (e, line) => {
-	if (!/^(status|reload|stop|start|rescan|quit)\b/.test(line)) return { ok: false, error: 'unknown command' };
+	if (!/^(status|reload|stop|start|mute|unmute|rescan|quit)\b/.test(line)) return { ok: false, error: 'unknown command' };
 	if (!supervisorPid()) return { ok: false, error: 'supervisor not running' };
 	fs.appendFileSync(cmdPath, line.trim() + '\n');
 	return { ok: true };
@@ -253,7 +305,8 @@ app.whenReady().then(() => {
 	meterSync();
 	// Reconcile receivers + meter helpers to config + toggles: picks up
 	// sources.json edits (add/remove/endpoint change) without renderer involvement.
-	setInterval(() => { previewSync(); meterSync(); }, 2000);
+	// muteSync re-asserts mute/solo intent on workers that restarted unmuted.
+	setInterval(() => { previewSync(); meterSync(); muteSync(false); }, 2000);
 });
 
 app.on('before-quit', () => { previews.shutdown(); metersShutdown(); });
