@@ -74,6 +74,86 @@ function previewSync() {
 	previews.sync(entries);
 }
 
+// ---- audio meters (Session 7 Part B) ---------------------------------------
+// One meter-stream.ps1 helper per DISTINCT endpoint referenced in sources.json
+// (v1 reality: just the one 8-ch VAIO). It reads IAudioMeterInformation on the
+// render endpoint — the exact plane the workers write to; the workers themselves
+// are untouched by design. Helper death is non-fatal: meters grey out in the
+// renderer (staleness), rows keep working; respawn ladder below.
+
+const meters = new Map(); // device fragment -> {child, backoffIdx, timer, retired}
+const METER_BACKOFF_MS = [2000, 5000, 15000, 60000];
+
+function meterEndpoints() {
+	const config = readJson(CONFIG_PATH);
+	const out = new Set();
+	if (config && config.sources && !builder.validateConfig(config).length) {
+		const defDev = (config.defaults && config.defaults.audio && config.defaults.audio.audioOutputDevice) || '';
+		for (const s of config.sources) {
+			const dev = (s.audio && s.audio.audioOutputDevice) || defDev;
+			if (dev) out.add(dev);
+		}
+	}
+	return out;
+}
+
+function spawnMeter(dev, entry) {
+	entry.child = spawn('powershell.exe', [
+		'-NoProfile', '-ExecutionPolicy', 'Bypass',
+		'-File', path.join(__dirname, 'meter-stream.ps1'),
+		'-DeviceMatch', dev, '-IntervalMs', '300',
+	], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+	require('readline').createInterface({ input: entry.child.stdout }).on('line', line => {
+		let parsed;
+		try { parsed = JSON.parse(line); } catch { return; }
+		if (parsed.error) { console.log(`[meter] ${dev}: ${parsed.error}`); return; }
+		entry.backoffIdx = 0; // healthy stream resets the ladder
+		if (mainWin && !mainWin.isDestroyed()) {
+			// key by the config's device FRAGMENT (what rows map against), keep the
+			// resolved endpoint label separately — parsed.device is the full label
+			// and must not overwrite the lookup key
+			mainWin.webContents.send('meter-update',
+				Object.assign({}, parsed, { device: dev, deviceLabel: parsed.device }));
+		}
+	});
+	entry.child.on('exit', code => {
+		entry.child = null;
+		if (entry.retired) return;
+		const delay = METER_BACKOFF_MS[Math.min(entry.backoffIdx, METER_BACKOFF_MS.length - 1)];
+		entry.backoffIdx++;
+		console.log(`[meter] ${dev}: helper exited code=${code}; respawn in ${delay / 1000}s`);
+		entry.timer = setTimeout(() => { if (!entry.retired) spawnMeter(dev, entry); }, delay);
+	});
+}
+
+function meterSync() {
+	const wanted = meterEndpoints();
+	for (const [dev, entry] of [...meters]) {
+		if (wanted.has(dev)) continue;
+		entry.retired = true;
+		clearTimeout(entry.timer);
+		if (entry.child) { try { entry.child.kill(); } catch {} }
+		meters.delete(dev);
+		console.log(`[meter] ${dev}: retired`);
+	}
+	for (const dev of wanted) {
+		if (meters.has(dev)) continue;
+		const entry = { child: null, backoffIdx: 0, timer: null, retired: false };
+		meters.set(dev, entry);
+		console.log(`[meter] ${dev}: spawning helper`);
+		spawnMeter(dev, entry);
+	}
+}
+
+function metersShutdown() {
+	for (const [, entry] of meters) {
+		entry.retired = true;
+		clearTimeout(entry.timer);
+		if (entry.child) { try { entry.child.kill(); } catch {} }
+	}
+	meters.clear();
+}
+
 // ---- IPC surface ----------------------------------------------------------
 
 ipcMain.handle('state', () => {
@@ -170,10 +250,11 @@ app.whenReady().then(() => {
 	mainWin = win;
 	previews.init();
 	previewSync();
-	// Reconcile receivers to config + toggles: picks up sources.json edits
-	// (add/remove/ndiName change) without renderer involvement.
-	setInterval(previewSync, 2000);
+	meterSync();
+	// Reconcile receivers + meter helpers to config + toggles: picks up
+	// sources.json edits (add/remove/endpoint change) without renderer involvement.
+	setInterval(() => { previewSync(); meterSync(); }, 2000);
 });
 
-app.on('before-quit', () => { previews.shutdown(); });
+app.on('before-quit', () => { previews.shutdown(); metersShutdown(); });
 app.on('window-all-closed', () => app.quit()); // workers live on — file-coupled only

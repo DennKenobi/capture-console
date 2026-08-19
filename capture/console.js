@@ -53,7 +53,14 @@ let rowsKey = ''; // structure fingerprint: rebuild rows only when it changes,
 const prevLastFrame = {};   // player -> ms of last painted frame
 let scratchCv = null;       // shared offscreen canvas for proxy-res -> row-res scaling
 
+let paintErrShown = false;
 function paintPreview(f) {
+	try { paintPreviewInner(f); } catch (err) {
+		if (!paintErrShown) { paintErrShown = true; setMsg(`preview paint failed (${f.player}): ${err.message}`); }
+	}
+}
+
+function paintPreviewInner(f) {
 	const cv = $(`pcv-${f.player}`);
 	if (!cv) return;
 	if (!scratchCv) scratchCv = document.createElement('canvas');
