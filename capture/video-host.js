@@ -247,15 +247,21 @@ function readConfigFile() {
 	}
 }
 
+// Parked senders from removed/renamed surfaces: destroying a sender in a LIVE
+// multi-sender host wedges the main loop even after a drain (observed 2026-08-18:
+// last log line printed, then no tick ever ran again). Senders are therefore only
+// ever destroyed at process shutdown (external watchdog covers a hang there);
+// until then a removed player's name stays advertised with its last frame.
+const parkedSenders = [];
+
 async function retireSurface(s) {
 	stopSurface(s);
 	if (SENDER_MODE === 'proc') {
 		if (uProc && s.senderReady) uProc.postMessage({ type: 'destroy', player: s.name });
 		s.senderReady = false;
 	} else if (s.sender) {
-		const drained = await s.sender.drain(500);
-		if (drained) { try { await s.sender.destroy(); } catch {} }
-		else console.log(`[vhost] ${s.name} sender not drained — leaked until process restart`);
+		parkedSenders.push(s.sender);
+		console.log(`[vhost] ${s.name} sender parked (name frees on host restart)`);
 		s.sender = null;
 	}
 	surfaces.delete(s.name);
@@ -300,8 +306,9 @@ async function reloadSurface(s) {
 					if (uProc && s.senderReady) uProc.postMessage({ type: 'destroy', player: s.name });
 					s.senderReady = false;
 				} else if (s.sender) {
-					const drained = await s.sender.drain(500);
-					if (drained) { try { await s.sender.destroy(); } catch {} }
+					// never destroy in a live host — see parkedSenders note
+					parkedSenders.push(s.sender);
+					console.log(`[vhost] ${s.name} old sender parked (name frees on host restart)`);
 					s.sender = null;
 				}
 			}
