@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('cc', {
 	previewToggle: (scope, on) => ipcRenderer.invoke('preview-toggle', scope, on),
 	audioMute: (player, on) => ipcRenderer.invoke('audio-mute', player, on),
 	audioSolo: player => ipcRenderer.invoke('audio-solo', player),
+	popoutToggle: player => ipcRenderer.invoke('popout-toggle', player),
 	onPreviewFrame: cb => ipcRenderer.on('preview-frame', (e, frame) => cb(frame)),
 	onMeterUpdate: cb => ipcRenderer.on('meter-update', (e, update) => cb(update)),
 });

@@ -29,6 +29,11 @@ function planeCell(worker, playerStats) {
 	if (worker.pid) html += ` <span class="mono">pid ${worker.pid}</span>`;
 	if (worker.restarts) html += ` <span class="mono">restarts ${worker.restarts}</span>`;
 	const stats = playerStats || worker.lastStats;
+	// tally chip (Session 8 Part C): downstream program/preview from the sender's
+	// stats poll — program strong, preview subtle (the row tints to match)
+	const tly = stats && stats.tally;
+	if (tly && tly.program) html += ' <span class="tallychip pgm">PGM</span>';
+	else if (tly && tly.preview) html += ' <span class="tallychip pvw">PVW</span>';
 	if (stats) html += `<br><span class="mono">${fmtStats(stats)}</span>`;
 	if (playerStats && playerStats.lastEv && playerStats.lastEv !== 'loaded') {
 		html += `<br><span class="mono">(${playerStats.lastEv})</span>`;
@@ -315,14 +320,15 @@ function render(state) {
 	const key = sources.map(s => s.name).join('|');
 	if (key !== rowsKey) {
 		rowsKey = key;
-		$('rows').innerHTML = sources.map(source => `<tr>
+		$('rows').innerHTML = sources.map(source => `<tr id="row-${source.name}">
 			<td><b>${source.name}</b></td>
 			<td class="mono" id="sid-${source.name}"></td>
 			<td class="mono" id="ndi-${source.name}"></td>
 			<td><div class="prevrow">
 				<div class="prevwrap"><canvas id="pcv-${source.name}" width="160" height="90"></canvas><span class="pbadge" id="pbadge-${source.name}" hidden></span></div>
 				<div><span id="vcell-${source.name}"></span><br>${btns(source.name, 'video')}
-					<button data-prevtoggle="${source.name}" id="ptog-${source.name}">preview</button></div>
+					<button data-prevtoggle="${source.name}" id="ptog-${source.name}">preview</button>
+					<button data-popout="${source.name}" id="pop-${source.name}">pop out</button></div>
 			</div></td>
 			<td><div class="meterwrap"><div class="meter" id="meter-${source.name}"><div class="meterfill" id="mfill-${source.name}"></div></div><span class="mono mch" id="mch-${source.name}"></span></div>
 				<span id="acell-${source.name}"></span><br>${btns(source.name, 'audio')}
@@ -355,6 +361,14 @@ function render(state) {
 		badge.hidden = !badgeText;
 		cv.classList.toggle('off', !rowOn);
 		if (rowOn && Date.now() - (prevLastFrame[name] || 0) > 4000) cv.classList.add('stale');
+
+		// tally row tint (program strong, preview subtle) + pop-out button state
+		const tly = playerStats && playerStats.tally;
+		const tr = $(`row-${name}`);
+		tr.classList.toggle('pgm', !!(tly && tly.program));
+		tr.classList.toggle('pvw', !!(tly && !tly.program && tly.preview));
+		const pop = $(`pop-${name}`);
+		pop.classList.toggle('active', !!(state.popouts && state.popouts.includes(name)));
 
 		// meter channel label
 		const t = meterMap[name];
@@ -509,6 +523,10 @@ document.body.addEventListener('click', async e => {
 		const name = e.target.dataset.solo;
 		const cur = lastState && lastState.audioMix ? lastState.audioMix.solo : null;
 		await window.cc.audioSolo(cur === name ? null : name); // re-click clears solo
+		return tick();
+	}
+	if (e.target.dataset && e.target.dataset.popout) {
+		await window.cc.popoutToggle(e.target.dataset.popout);
 		return tick();
 	}
 	// Audio Manager grid: chip click selects (chips sit inside cells — check first)

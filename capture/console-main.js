@@ -56,9 +56,67 @@ function readJson(p) {
 
 let mainWin = null;
 const previews = new PreviewManager(
-	(channel, payload) => { if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send(channel, payload); },
+	(channel, payload) => {
+		if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send(channel, payload);
+		// Session 8 Part D: fan the SAME frames out to that player's pop-out (if any) —
+		// no extra receiver, no extra bandwidth, the pop-out is just a second canvas.
+		if (channel === 'preview-frame' && payload && payload.player) {
+			const pop = popouts.get(payload.player);
+			if (pop && !pop.isDestroyed()) pop.webContents.send(channel, payload);
+		}
+	},
 	msg => console.log(msg),
 );
+
+// ---- preview pop-outs (Session 8 Part D) ------------------------------------
+// Plain visible frameless BrowserWindows in the CONSOLE process painting the same
+// proxy frames as the row canvases. Not offscreen, not the custom-OSR path, so
+// close/destroy is normal Electron behavior — if any wedge symptom appears, switch
+// to park-don't-destroy and ledger it (SESSION8-SPEC §4).
+const popouts = new Map(); // player -> BrowserWindow
+
+function popoutToggle(player) {
+	const existing = popouts.get(player);
+	if (existing) {
+		if (!existing.isDestroyed()) existing.close();
+		popouts.delete(player);
+		return false;
+	}
+	const win = new BrowserWindow({
+		width: 640,
+		height: 360,
+		useContentSize: true,
+		frame: false,
+		title: `${player} — preview`,
+		backgroundColor: '#10161a',
+		webPreferences: {
+			preload: path.join(__dirname, 'console-preload.js'),
+			contextIsolation: true,
+			nodeIntegration: false,
+		},
+	});
+	win.removeMenu();
+	win.loadFile(path.join(__dirname, 'console-popout.html'), { query: { player } });
+	win.on('closed', () => { if (popouts.get(player) === win) popouts.delete(player); });
+	popouts.set(player, win);
+	return true;
+}
+
+function popoutSync() {
+	// close pop-outs whose player left the config (rescan-removed)
+	const config = readJson(CONFIG_PATH);
+	const names = new Set(config && config.sources ? config.sources.map(s => s.name) : []);
+	for (const [player, win] of [...popouts]) {
+		if (names.has(player)) continue;
+		popouts.delete(player);
+		if (!win.isDestroyed()) win.close();
+	}
+}
+
+function popoutsShutdown() {
+	for (const [, win] of popouts) { if (!win.isDestroyed()) win.close(); }
+	popouts.clear();
+}
 let previewGlobal = true;
 const previewRowOff = new Set(); // per-row opt-outs (default on)
 
@@ -214,8 +272,11 @@ ipcMain.handle('state', () => {
 			states: previews.states(),
 		},
 		audioMix: { solo: soloPlayer, muted: [...muteIntent] },
+		popouts: [...popouts.keys()],
 	};
 });
+
+ipcMain.handle('popout-toggle', (e, player) => ({ ok: true, open: popoutToggle(player) }));
 
 ipcMain.handle('audio-mute', (e, player, on) => {
 	if (on) muteIntent.add(player); else muteIntent.delete(player);
@@ -300,13 +361,16 @@ app.whenReady().then(() => {
 	win.removeMenu();
 	win.loadFile(path.join(__dirname, 'console.html'));
 	mainWin = win;
+	// closing the console window closes its pop-outs too (they are children in
+	// spirit; without this, window-all-closed never fires while a pop-out lives)
+	win.on('closed', popoutsShutdown);
 	previews.init();
 	previewSync();
 	meterSync();
 	// Reconcile receivers + meter helpers to config + toggles: picks up
 	// sources.json edits (add/remove/endpoint change) without renderer involvement.
 	// muteSync re-asserts mute/solo intent on workers that restarted unmuted.
-	setInterval(() => { previewSync(); meterSync(); muteSync(false); }, 2000);
+	setInterval(() => { previewSync(); meterSync(); muteSync(false); popoutSync(); }, 2000);
 });
 
 app.on('before-quit', () => { previews.shutdown(); metersShutdown(); });

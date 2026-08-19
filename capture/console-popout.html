@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>preview</title>
+<style>
+  /* Session 8 Part D: frameless pop-out painting the SAME preview frames the row
+     canvas gets (console main fans them out) — no new receivers, no worker contact. */
+  html, body { margin: 0; height: 100%; background: #10161a; overflow: hidden;
+               font: 12px system-ui, sans-serif; }
+  #strip { position: absolute; top: 0; left: 0; right: 0; height: 24px;
+           display: flex; align-items: center; gap: 8px; padding: 0 8px;
+           background: rgba(20,24,28,.75); color: #dfe7ea; z-index: 2;
+           -webkit-app-region: drag; opacity: 0; transition: opacity 120ms; }
+  body:hover #strip { opacity: 1; }
+  #strip b { font-weight: 600; }
+  #close { margin-left: auto; -webkit-app-region: no-drag; cursor: pointer;
+           color: #dfe7ea; background: none; border: none; font: inherit; font-size: 14px; }
+  #close:hover { color: #ff8080; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  canvas.stale { opacity: 0.4; }
+  #stale { position: absolute; left: 8px; bottom: 6px; color: #ffce56; z-index: 2;
+           background: rgba(20,24,28,.82); padding: 1px 6px; border-radius: 3px; }
+</style>
+</head>
+<body>
+  <div id="strip"><b id="who"></b><button id="close" title="close">✕</button></div>
+  <canvas id="cv" width="640" height="360"></canvas>
+  <span id="stale" hidden>no frames — preview off or stream down</span>
+<script>
+  'use strict';
+  const player = new URLSearchParams(location.search).get('player') || '?';
+  document.getElementById('who').textContent = player;
+  document.title = `${player} — preview`;
+  document.getElementById('close').addEventListener('click', () => window.close());
+
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  let lastFrame = 0;
+  // Main fans out only THIS player's frames to this window; paint everything received.
+  window.cc.onPreviewFrame(f => {
+    try {
+      if (cv.width !== f.xres || cv.height !== f.yres) { cv.width = f.xres; cv.height = f.yres; }
+      let bytes = f.data;
+      if (f.stride !== f.xres * 4) {
+        bytes = new Uint8Array(f.xres * f.yres * 4);
+        for (let y = 0; y < f.yres; y++)
+          bytes.set(f.data.subarray(y * f.stride, y * f.stride + f.xres * 4), y * f.xres * 4);
+      }
+      ctx.putImageData(new ImageData(new Uint8ClampedArray(bytes.buffer, bytes.byteOffset, f.xres * f.yres * 4), f.xres, f.yres), 0, 0);
+      lastFrame = Date.now();
+    } catch { /* a bad frame must not kill the pop-out */ }
+  });
+  setInterval(() => {
+    const stale = Date.now() - lastFrame > 4000;
+    cv.classList.toggle('stale', stale);
+    document.getElementById('stale').hidden = !stale;
+  }, 1000);
+</script>
+</body>
+</html>
