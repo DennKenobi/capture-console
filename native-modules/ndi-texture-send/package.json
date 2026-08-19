@@ -1,0 +1,20 @@
+{
+  "name": "ndi-texture-send",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GPU shared-texture readback → NDI send, off the Electron main loop (Capture Console fork)",
+  "main": "index.js",
+  "scripts": {
+    "install": "node-gyp rebuild",
+    "rebuild": "node-gyp rebuild",
+    "build": "node-gyp build",
+    "clean": "node-gyp clean"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.9.1"
+  },
+  "devDependencies": {
+    "node-gyp": "^12.4.0"
+  },
+  "license": "Apache-2.0"
+}

@@ -9,6 +9,9 @@
 !/native-modules/electron-asio
 /native-modules/electron-asio/build
 /native-modules/electron-asio/node_modules
+!/native-modules/ndi-texture-send
+/native-modules/ndi-texture-send/build
+/native-modules/ndi-texture-send/node_modules
 mac.sh
 /vdoninja
 /.claude
