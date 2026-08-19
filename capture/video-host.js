@@ -142,6 +142,8 @@ function buildWindow(s) {
 	win.webContents.setFrameRate(s.video.fps);
 
 	win.webContents.on('paint', (event, dirty, image) => {
+		if (s.retired) return; // parked window may still paint about:blank
+		if (SENDER_MODE !== 'proc' && !s.sender) return;
 		s.paints++;
 		const size = image.getSize();
 		// toBitmap() copies — paint-owned buffer must not reach NDI's async thread.
@@ -179,18 +181,27 @@ function buildWindow(s) {
 	return win;
 }
 
-function destroyWindow(s) {
+// BrowserWindow.destroy() on a LIVE offscreen window wedges this build's main
+// loop (observed twice, 2026-08-18: the removal path's last log line prints,
+// then no timer/poller ever runs again — with and without a sender destroy).
+// Windows are therefore NEVER destroyed while the host lives: removals park
+// them on about:blank, reloads and self-heals REUSE the window via loadURL
+// (which spawns a fresh renderer after a crash). destroy happens only in
+// shutdown, where the external watchdog bounds any hang.
+function parkWindow(s) {
 	clearTimeout(s.backoffTimer);
 	clearTimeout(s.healthyTimer);
-	if (s.win && !s.win.isDestroyed()) s.win.destroy();
-	s.win = null;
+	if (s.win && !s.win.isDestroyed()) {
+		try { s.win.loadURL('about:blank'); } catch {}
+	}
 }
 
 // Window-level self-heal: per-player blast radius stays per-player in the
 // consolidated shape. The NDI sender survives rebuilds (name never re-created,
 // so the lingering-name gotcha never triggers here).
 function scheduleRebuild(s) {
-	destroyWindow(s);
+	clearTimeout(s.backoffTimer);
+	clearTimeout(s.healthyTimer);
 	if (s.requestedStop || shuttingDown) { s.state = 'stopped'; return; }
 	if (s.rebuilds >= MAX_REBUILDS) {
 		s.state = 'failed';
@@ -207,6 +218,7 @@ function scheduleRebuild(s) {
 
 async function startSurface(s) {
 	s.requestedStop = false;
+	s.retired = false;
 	s.state = 'starting';
 	if (SENDER_MODE === 'proc') {
 		if (!s.senderReady) {
@@ -217,7 +229,9 @@ async function startSurface(s) {
 		s.sender = await ndi.create(s.ndiName, { fps: s.video.fps, depth: NDI_DEPTH });
 		emit('ready', s.name, { ndiName: s.ndiName });
 	}
-	s.win = buildWindow(s);
+	// Reuse an existing window whenever possible — see the parkWindow note.
+	if (!s.win || s.win.isDestroyed()) s.win = buildWindow(s);
+	else s.win.webContents.setFrameRate(s.video.fps);
 	try {
 		await s.win.loadURL(s.url);
 	} catch (err) {
@@ -229,7 +243,7 @@ async function startSurface(s) {
 
 function stopSurface(s) {
 	s.requestedStop = true;
-	destroyWindow(s);
+	parkWindow(s);
 	s.state = 'stopped';
 	console.log(`[vhost] ${s.name} stopped`);
 }
@@ -255,6 +269,7 @@ function readConfigFile() {
 const parkedSenders = [];
 
 async function retireSurface(s) {
+	s.retired = true;
 	stopSurface(s);
 	if (SENDER_MODE === 'proc') {
 		if (uProc && s.senderReady) uProc.postMessage({ type: 'destroy', player: s.name });
@@ -315,9 +330,8 @@ async function reloadSurface(s) {
 			s.url = next.url; s.ndiName = next.ndiName; s.video = next.video;
 		}
 	}
-	destroyWindow(s);
 	s.rebuilds = 0;
-	return startSurface(s);
+	return startSurface(s); // reuses the window; loadURL replaces the page
 }
 
 let shuttingDown = false;
@@ -332,7 +346,9 @@ async function shutdown(reason) {
 		{ detached: true, stdio: 'ignore', windowsHide: true }).unref();
 	for (const [, s] of surfaces) {
 		emit('exiting', s.name, { reason });
-		destroyWindow(s);
+		clearTimeout(s.backoffTimer);
+		clearTimeout(s.healthyTimer);
+		// windows die with the process — destroy() wedges a live host
 	}
 	if (SENDER_MODE === 'proc' && uProc) {
 		// The utility process owns the senders: ask it to drain+destroy and exit.
