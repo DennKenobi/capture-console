@@ -106,6 +106,9 @@ ipcMain.handle('start-supervisor', () => {
 });
 
 app.whenReady().then(() => {
+	// Operator console: always expose the full accessibility tree (screen readers,
+	// UI automation). Cost is negligible at this page size.
+	app.setAccessibilitySupportEnabled(true);
 	const win = new BrowserWindow({
 		width: 1280,
 		height: 860,

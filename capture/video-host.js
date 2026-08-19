@@ -400,7 +400,7 @@ app.whenReady().then(async () => {
 		}
 	}, 10000);
 
-	readline.createInterface({ input: process.stdin }).on('line', line => {
+	function handleCommand(line) {
 		const [cmd, player] = line.trim().split(/\s+/);
 		if (!cmd) return;
 		if (cmd === 'quit') return void shutdown('quit');
@@ -418,7 +418,23 @@ app.whenReady().then(async () => {
 			return void reloadSurface(s);
 		}
 		console.log('[vhost] commands: status | reload <player> | stop <player> | start <player> | rescan | quit');
-	});
+	}
+	// stdin works in dev on POSIX, but a piped stdin into an Electron main process
+	// is NOT reliably readable on Windows (verified 2026-08-18: readline never fired
+	// for supervisor-forwarded lines). The command channel that actually carries
+	// supervisor traffic is a polled file, same pattern as supervisor.cmd.
+	readline.createInterface({ input: process.stdin }).on('line', handleCommand);
+	const cmdFile = path.join(path.dirname(path.resolve(CONFIG_PATH)), 'vhost.cmd');
+	setInterval(() => {
+		const fs2 = require('fs');
+		let text;
+		try { text = fs2.readFileSync(cmdFile, 'utf8'); } catch { return; }
+		if (!text.trim()) return;
+		try { fs2.writeFileSync(cmdFile, ''); } catch {}
+		for (const line of text.split(/\r?\n/)) {
+			if (line.trim()) { console.log(`[vhost] cmd-file: ${line.trim()}`); handleCommand(line); }
+		}
+	}, 2000);
 
 	if (DURATION_S > 0) setTimeout(() => shutdown('duration'), DURATION_S * 1000);
 }).catch(err => {

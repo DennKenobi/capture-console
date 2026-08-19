@@ -42,6 +42,10 @@ function btns(player, plane) {
 	</span>`;
 }
 
+let rowsKey = ''; // structure fingerprint: rebuild rows only when it changes,
+// otherwise update stat spans in place — a full innerHTML swap every tick
+// swallows operator clicks on buttons being replaced mid-click.
+
 function render(state) {
 	lastState = state;
 	$('cfgPath').textContent = state.configPath;
@@ -59,24 +63,30 @@ function render(state) {
 		setMsg('sources.json problems: ' + state.configErrors.join('; '));
 	}
 
+	const sources = state.config ? state.config.sources : [];
+	const key = sources.map(s => s.name).join('|');
+	if (key !== rowsKey) {
+		rowsKey = key;
+		$('rows').innerHTML = sources.map(source => `<tr>
+			<td><b>${source.name}</b></td>
+			<td class="mono" id="sid-${source.name}"></td>
+			<td class="mono" id="ndi-${source.name}"></td>
+			<td><span id="vcell-${source.name}"></span><br>${btns(source.name, 'video')}</td>
+			<td><span id="acell-${source.name}"></span><br>${btns(source.name, 'audio')}</td>
+			<td><button data-edit="${source.name}">Edit</button> <button data-remove="${source.name}">Remove</button></td>
+		</tr>`).join('');
+	}
 	const workers = new Map((state.status ? state.status.workers : []).map(w => [w.key, w]));
 	const host = workers.get('videohost/video');
-	const rows = [];
-	for (const source of (state.config ? state.config.sources : [])) {
+	for (const source of sources) {
 		const name = source.name;
+		$(`sid-${name}`).textContent = source.streamId || '';
+		$(`ndi-${name}`).textContent = state.ndiNames && state.ndiNames[name] ? state.ndiNames[name] : '';
 		const videoWorker = host || workers.get(`${name}/video`);
 		const playerStats = host && host.playerStats ? host.playerStats[name] : null;
-		const ndi = state.ndiNames && state.ndiNames[name] ? state.ndiNames[name] : '';
-		rows.push(`<tr>
-			<td><b>${name}</b></td>
-			<td class="mono">${source.streamId || ''}</td>
-			<td class="mono">${ndi}</td>
-			<td>${planeCell(videoWorker, playerStats)}<br>${btns(name, 'video')}</td>
-			<td>${planeCell(workers.get(`${name}/audio`))}<br>${btns(name, 'audio')}</td>
-			<td><button data-edit="${name}">Edit</button> <button data-remove="${name}">Remove</button></td>
-		</tr>`);
+		$(`vcell-${name}`).innerHTML = planeCell(videoWorker, playerStats);
+		$(`acell-${name}`).innerHTML = planeCell(workers.get(`${name}/audio`));
 	}
-	$('rows').innerHTML = rows.join('');
 }
 
 async function tick() {

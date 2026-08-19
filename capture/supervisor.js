@@ -387,10 +387,9 @@ async function rescan() {
 		}
 	}
 	// consolidated host reconciles its own windows from the same file
-	const host = workers.get(VIDEOHOST_KEY);
-	if (host && host.child && host.child.stdin) {
+	if (workers.has(VIDEOHOST_KEY)) {
 		log('[sup] RESCAN forwarding to videohost');
-		host.child.stdin.write('rescan\n');
+		forwardToVideohost('rescan');
 	}
 	// spawn newcomers sequenced (video-plane first is preserved by spec order)
 	for (const spec of newcomers) {
@@ -429,15 +428,16 @@ async function handleCommand(line) {
 		const key = `${player}/${plane}`;
 		let w = getWorker(key);
 		// Consolidated topology: a player's video plane is a window inside the host —
-		// forward the command to video-host stdin (window rebuild; NDI sender kept,
-		// so no name-linger penalty). `<cmd> videohost video` still operates on the
-		// host process itself.
+		// forward the command to video-host (window rebuild; NDI sender kept, so no
+		// name-linger penalty). Forwarding is via the polled vhost.cmd file — a piped
+		// stdin into an Electron main process is not readable on Windows.
+		// `<cmd> videohost video` still operates on the host process itself.
 		if (!w && plane === 'video' && VIDEO_TOPOLOGY === 'consolidated') {
 			const host = getWorker(VIDEOHOST_KEY);
-			if (host && host.child && host.child.stdin) {
+			if (host && host.child) {
 				log(`[sup] forwarding to videohost: ${cmd} ${player}`);
 				emitSup('vhost-forward', { cmd, player });
-				host.child.stdin.write(`${cmd} ${player}\n`);
+				forwardToVideohost(`${cmd} ${player}`);
 				return;
 			}
 			return console.log(`videohost not running; cannot ${cmd} ${player}/video`);
@@ -470,6 +470,13 @@ readline.createInterface({ input: process.stdin }).on('line', handleCommand);
 
 // File-based command channel for detached/unattended operation: append lines to
 // <config-dir>/supervisor.cmd; they are executed and the file truncated.
+// Video-host command forwarding: append to the file video-host polls.
+function forwardToVideohost(line) {
+	try { fs.appendFileSync(path.join(configDir, 'vhost.cmd'), line + '\n'); } catch (err) {
+		log(`[sup] vhost forward failed: ${err.message}`);
+	}
+}
+
 const cmdFile = path.join(configDir, 'supervisor.cmd');
 setInterval(() => {
 	let text;
