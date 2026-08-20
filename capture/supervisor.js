@@ -30,9 +30,18 @@ const SUP_STATUS_JSON = process.argv.includes('--status-json');
 if (!CONFIG_PATH) { console.error('--config=<path> is required'); process.exit(2); }
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const ELECTRON_EXE = process.platform === 'win32'
-	? path.join(REPO_ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
-	: path.join(REPO_ROOT, 'node_modules', '.bin', 'electron');
+// Packaged topology (Session 11, SESSION11-SPEC §2): in an installed app this
+// script runs from resources/app.asar.unpacked/capture/ under ELECTRON_RUN_AS_NODE
+// of ECANDI.exe — so process.execPath IS the packaged Electron, and workers spawn
+// as the SAME exe with --ecandi-role args (capture/ecandi-entry.js dispatches;
+// packaged Electron ignores script-path arguments). Dev trees keep the
+// node_modules path so a standalone `node capture/supervisor.js` still works.
+const PACKAGED = __dirname.includes('app.asar.unpacked');
+const ELECTRON_EXE = PACKAGED
+	? process.execPath
+	: (process.platform === 'win32'
+		? path.join(REPO_ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
+		: path.join(REPO_ROOT, 'node_modules', '.bin', 'electron'));
 const READY_TIMEOUT_MS = 90000;
 const RESTART_BACKOFF_MS = [2000, 5000, 15000, 30000, 60000];
 // Page-load failures (worker exit code 4) churn whole process trees and cluster
@@ -164,7 +173,7 @@ function workerSpecs() {
 		if (senderMode) args.push(`--sender=${senderMode}`);
 		specs.push({
 			key: VIDEOHOST_KEY, player: 'videohost', plane: 'video', consolidated: true,
-			entry: path.join(__dirname, 'video-host.js'),
+			entry: path.join(__dirname, 'video-host.js'), role: 'vhost',
 			args,
 		});
 	}
@@ -174,7 +183,7 @@ function workerSpecs() {
 		if ((!ONLY_PLANE || ONLY_PLANE === 'video') && VIDEO_TOPOLOGY !== 'consolidated') {
 			specs.push({
 				key: `${source.name}/video`, player: source.name, plane: 'video',
-				entry: path.join(__dirname, 'slice-main.js'),
+				entry: path.join(__dirname, 'slice-main.js'), role: 'slice',
 				args: [
 					`--url=${builder.videoUrl(source, config.defaults)}`,
 					`--ndi-name=${builder.ndiName(source, config.defaults)}`,
@@ -187,7 +196,7 @@ function workerSpecs() {
 		if (!ONLY_PLANE || ONLY_PLANE === 'audio') {
 			specs.push({
 				key: `${source.name}/audio`, player: source.name, plane: 'audio',
-				entry: path.join(__dirname, 'audio-main.js'),
+				entry: path.join(__dirname, 'audio-main.js'), role: 'audio',
 				args: [
 					`--url=${builder.audioUrl(source, config.defaults)}`,
 					`--user-data-dir=${path.join(dataRoot, `${source.name}-audio`)}`,
@@ -212,7 +221,9 @@ function spawnWorker(w) {
 	// electron.exe workers or they would boot as plain Node.
 	const env = Object.assign({}, process.env);
 	delete env.ELECTRON_RUN_AS_NODE;
-	const child = spawn(ELECTRON_EXE, [w.spec.entry, ...w.spec.args], {
+	// Packaged: role flag (dispatched by ecandi-entry.js); dev: script path.
+	const entryArgs = PACKAGED ? [`--ecandi-role=${w.spec.role}`] : [w.spec.entry];
+	const child = spawn(ELECTRON_EXE, [...entryArgs, ...w.spec.args], {
 		// Consolidated video host takes per-player commands on stdin.
 		stdio: [w.spec.consolidated ? 'pipe' : 'ignore', 'pipe', 'pipe'],
 		windowsHide: true,

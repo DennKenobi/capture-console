@@ -26,6 +26,23 @@ function argOf(name, dflt) {
 	return hit ? hit.split('=').slice(1).join('=') : dflt;
 }
 
+// Own identity (Session 11, SESSION11-SPEC §1): stock Electron Capture runs on
+// these rigs — a shared AUMID would make Windows group/confuse the two apps.
+// Set at runtime too (not just installer registry) for dev/taskbar consistency.
+app.setAppUserModelId('app.ecandi');
+
+// Packaged-topology path resolution (Session 11). In a packaged app __dirname
+// lives inside resources/app.asar — readable by Electron's own fs, but not by
+// EXTERNAL consumers of a path: powershell.exe -File targets, and the
+// ELECTRON_RUN_AS_NODE supervisor entry (asar behavior under run-as-node
+// measured by capture/test/runasnode-probe.js; result in the Session 11
+// ledger). capture/** is asarUnpacked by electron-builder.ecandi.js, so every
+// such path has a real-file twin under app.asar.unpacked. Dev-tree paths pass
+// through unchanged.
+function unpacked(p) {
+	return p.includes('app.asar') ? p.replace('app.asar', 'app.asar.unpacked') : p;
+}
+
 // Own data dir (optional): isolates the console profile and makes the whole
 // console process tree markable for bench sampling (tree-cpu.ps1 -Marker <dir>).
 const USER_DATA_DIR = argOf('user-data-dir', '');
@@ -34,7 +51,15 @@ if (USER_DATA_DIR) app.setPath('userData', path.resolve(USER_DATA_DIR));
 // Scene = a sources.json (Session 10 Part A). The console can switch scenes at
 // runtime; every coupling path derives from the CURRENT scene file, and the
 // supervisor coupling files live beside it (one supervisor per scene dir).
-let configPath = path.resolve(argOf('config', path.join(__dirname, 'sources.json')));
+// Installed default (Session 11, SESSION11-SPEC §1): Documents\ECANDI\ — the
+// shell-known Documents folder, so an operator finds scenes where "Documents"
+// actually points (OneDrive-redirected boxes included), and they survive
+// uninstall because they live nowhere near the install dir. Dev trees keep the
+// repo-relative default.
+const DEFAULT_SCENE = app.isPackaged
+	? path.join(app.getPath('documents'), 'ECANDI', 'default.json')
+	: path.join(__dirname, 'sources.json');
+let configPath = path.resolve(argOf('config', DEFAULT_SCENE));
 let configDir = path.dirname(configPath);
 let pidPath = path.join(configDir, 'supervisor.pid');
 let cmdPath = path.join(configDir, 'supervisor.cmd');
@@ -213,7 +238,7 @@ function meterEndpoints() {
 function spawnMeter(dev, entry) {
 	entry.child = spawn('powershell.exe', [
 		'-NoProfile', '-ExecutionPolicy', 'Bypass',
-		'-File', path.join(__dirname, 'meter-stream.ps1'),
+		'-File', unpacked(path.join(__dirname, 'meter-stream.ps1')),
 		'-DeviceMatch', dev, '-IntervalMs', '300',
 	], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
 	require('readline').createInterface({ input: entry.child.stdout }).on('line', line => {
@@ -338,7 +363,7 @@ function misrouteEval() {
 function spawnMisrouteHelper(entry) {
 	entry.child = spawn('powershell.exe', [
 		'-NoProfile', '-ExecutionPolicy', 'Bypass',
-		'-File', path.join(__dirname, 'misroute-stream.ps1'),
+		'-File', unpacked(path.join(__dirname, 'misroute-stream.ps1')),
 		'-IntervalMs', '5000',
 	], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
 	require('readline').createInterface({ input: entry.child.stdout }).on('line', line => {
@@ -586,7 +611,7 @@ ipcMain.handle('audio-devices', async () => {
 	const data = await new Promise(resolve => {
 		require('child_process').execFile('powershell.exe', [
 			'-NoProfile', '-ExecutionPolicy', 'Bypass',
-			'-File', path.join(__dirname, 'list-endpoints.ps1'),
+			'-File', unpacked(path.join(__dirname, 'list-endpoints.ps1')),
 		], { timeout: 20000, windowsHide: true }, (err, stdout) => {
 			if (err) return resolve({ error: String(err.message || err), default: '', devices: [] });
 			try { resolve(JSON.parse(stdout)); } catch { resolve({ error: 'enumeration output unparsable', default: '', devices: [] }); }
@@ -665,7 +690,9 @@ ipcMain.handle('start-supervisor', () => {
 	// Fully detached: no pipes, unref'd — console death cannot reach the supervisor.
 	// ELECTRON_RUN_AS_NODE turns this Electron binary into plain Node for supervisor.js
 	// (the supervisor strips the var before spawning its electron.exe workers).
-	const child = spawn(process.execPath, [path.join(__dirname, 'supervisor.js'), `--config=${configPath}`], {
+	// Packaged, process.execPath IS ECANDI.exe and the script path is the
+	// app.asar.unpacked twin (real file — no bet on run-as-node asar support).
+	const child = spawn(process.execPath, [unpacked(path.join(__dirname, 'supervisor.js')), `--config=${configPath}`], {
 		detached: true,
 		stdio: 'ignore',
 		windowsHide: true,
@@ -676,6 +703,10 @@ ipcMain.handle('start-supervisor', () => {
 });
 
 app.whenReady().then(() => {
+	// One boot line of runtime identity (Session 11): the packaged-runtime
+	// landmine check — 43.3.0-qp20 must ship, never the win10 default — reads
+	// straight off any captured console log.
+	console.log(`[ecandi] electron=${process.versions.electron} packaged=${app.isPackaged} exe=${process.execPath} scene=${configPath}`);
 	// Operator console: always expose the full accessibility tree (screen readers,
 	// UI automation). Cost is negligible at this page size.
 	app.setAccessibilitySupportEnabled(true);
