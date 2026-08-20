@@ -16,44 +16,19 @@ const path = require('path');
 app.commandLine.appendSwitch('force-device-scale-factor', '1');
 app.disableHardwareAcceleration();
 
-const SVG_PATH = path.resolve(__dirname, '..', 'assets', 'ecandi-logo.svg');
+// The ECANDI mark (Dennis, 2026-08-20): hex + bolt only — the Just Create
+// Labs family identity, simplified for small sizes by design. Both variants
+// already carry the hex-interior ground (#0a0f1f) on an 800-unit canvas, so
+// corners stay transparent (hex-shaped icon) with no injection needed.
+// Dennis's split: the baked-glow mark for larger sizes, the plain mark for
+// small ones (glow at tiny sizes just reads as blur).
+const SVG_GLOW = path.resolve(__dirname, '..', 'assets', 'ecandi-mark-glow.svg');
+const SVG_PLAIN = path.resolve(__dirname, '..', 'assets', 'ecandi-mark.svg');
 const OUT_PATH = path.resolve(__dirname, '..', 'assets', 'ecandi.ico');
 const SIZES = [16, 32, 48, 64, 128, 256];
-
-// The icon ground fills only the INSIDE of the purple hexagon (Dennis,
-// 2026-08-20) — corners stay transparent, so the desktop icon is hex-shaped.
-// Vertices read off the Purple ring path's outer contour (900-unit canvas);
-// the ring paints over the polygon edge, hiding any AA seam. Color is the
-// with-BG SVG's top layer (CyberSec_Drk_Bl_1).
-const HEX_BG = '<polygon points="450.94,64.37 784.73,257.32 784.73,642.68 '
-	+ '450.94,835.63 116.87,642.68 116.87,257.32" fill="#0a0f1f"/>';
-
-// Per-size variants (icon craft, not artwork changes): the source SVG draws on
-// a 900-unit canvas with 5-unit strokes — at 48 px that renders 0.27 px and
-// the camera dissolves. For small sizes a CSS override (injected into a temp
-// copy; CSS beats presentation attributes) rescales strokes to ~1.5 device px
-// and outlines the thin FILLED shapes (tripod legs, bolt) the same way. At
-// 16 px the tripod is three hairlines across five pixels — dropped entirely.
-const TWEAK_MAX_SIZE = 64;      // stroke boost applies at and below this size
-const CAMERA_TARGET_PX = 1.5;   // camera-body stroke, in device pixels
-const AUX_TARGET_PX = 0.9;      // added outline on legs/bolt fills
+const GLOW_MIN_SIZE = 64; // glow variant at and above this size
 function svgForSize(size) {
-	let css = '';
-	if (size <= TWEAK_MAX_SIZE) {
-		const cam = Math.round(CAMERA_TARGET_PX * 900 / size);
-		const aux = Math.round(AUX_TARGET_PX * 900 / size);
-		css = '<style>'
-			+ `#Movie_Cam_Body{stroke-width:${cam}px}`
-			+ `#Movie_Cam_Legs,#Lightning_Bolt polygon{stroke:#00e0e9;stroke-width:${aux}px;paint-order:stroke}`
-			+ (size <= 16 ? '#Movie_Cam_Legs{display:none}' : '')
-			+ '</style>';
-	}
-	// hex ground first in document order = behind the ring and the camera art
-	const text = fs.readFileSync(SVG_PATH, 'utf8')
-		.replace('<g id="symbol_only">', css + HEX_BG + '<g id="symbol_only">');
-	const tmp = path.join(require('os').tmpdir(), `ecandi-icon-${size}.svg`);
-	fs.writeFileSync(tmp, text);
-	return tmp;
+	return size >= GLOW_MIN_SIZE ? SVG_GLOW : SVG_PLAIN;
 }
 
 // ONE reused offscreen window, resized per capture — destroying an offscreen
@@ -115,8 +90,8 @@ function buildIco(pngs) {
 }
 
 app.whenReady().then(async () => {
-	if (!fs.existsSync(SVG_PATH)) {
-		console.error(`missing ${SVG_PATH}`);
+	if (!fs.existsSync(SVG_GLOW) || !fs.existsSync(SVG_PLAIN)) {
+		console.error(`missing ${SVG_GLOW} or ${SVG_PLAIN}`);
 		app.exit(2);
 		return;
 	}
