@@ -1,7 +1,7 @@
 // Test 1 (SESSION4-SPEC §4): url-builder assertions. Plain node, no deps.
 //   node capture/test/url-builder.test.js
 'use strict';
-const { videoUrl, audioUrl, ndiName, validateConfig } = require('../url-builder');
+const { videoUrl, audioUrl, ndiName, validateConfig, normalizeDeviceLabel, deviceMatches, sameDevice } = require('../url-builder');
 
 const cfg = {
   defaults: {
@@ -60,6 +60,47 @@ const badErrs = validateConfig({
   ],
 });
 eq('bad config error count', String(badErrs.length >= 3), 'true');
+
+// Session 10: device-identity normalization (vdo.ninja's own rule everywhere)
+eq('normalize matches vdo.ninja rule', normalizeDeviceLabel('VBMatrix In 6 (VB-Audio Matrix VAIO)'),
+  'vbmatrix_in_6_vb_audio_matrix_vaio_');
+eq('fragment matches its full label', String(deviceMatches('VBMatrix In 6', 'VBMatrix In 6 (VB-Audio Matrix VAIO)')), 'true');
+eq('fragment does not match another endpoint', String(deviceMatches('VBMatrix In 6', 'Out 3-4 (MOTU M Series)')), 'false');
+eq('sameDevice: fragment vs full label', String(sameDevice('VBMatrix In 6', 'VBMatrix In 6 (VB-Audio Matrix VAIO)')), 'true');
+eq('sameDevice: different endpoints', String(sameDevice('VBMatrix In 6', 'VBMatrix In 5')), 'false');
+eq('sameDevice: empty never matches', String(sameDevice('', 'VBMatrix In 6')), 'false');
+
+// offset conflict across fragment/full-label spellings of ONE physical endpoint
+const spellErrs = validateConfig({
+  defaults: cfg.defaults,
+  sources: [
+    { name: 'A', streamId: 'a', audio: { audioOutputDevice: 'VBMatrix In 6', channelOffset: 3 } },
+    { name: 'B', streamId: 'b', audio: { audioOutputDevice: 'VBMatrix In 6 (VB-Audio Matrix VAIO)', channelOffset: 3 } },
+  ],
+});
+eq('same physical endpoint, same offset -> conflict', String(spellErrs.length), '1');
+
+// genuinely different devices may share an offset
+const multiDevErrs = validateConfig({
+  defaults: cfg.defaults,
+  sources: [
+    { name: 'A', streamId: 'a', audio: { audioOutputDevice: 'VBMatrix In 6', channelOffset: 3 } },
+    { name: 'B', streamId: 'b', audio: { audioOutputDevice: 'Out 3-4 (MOTU M Series)', channelOffset: 3 } },
+  ],
+});
+eq('different devices, same offset -> ok', spellErrs.length === 1 ? multiDevErrs.join(';') : 'skipped', '');
+
+// the Session 8 hole: per-offset map only remembered the LAST device seen —
+// A(devX off0), B(devY off0), C(devX off0) must flag A vs C
+const holeErrs = validateConfig({
+  defaults: cfg.defaults,
+  sources: [
+    { name: 'A', streamId: 'a', audio: { audioOutputDevice: 'VBMatrix In 6', channelOffset: 0 } },
+    { name: 'B', streamId: 'b', audio: { audioOutputDevice: 'Out 3-4 (MOTU M Series)', channelOffset: 0 } },
+    { name: 'C', streamId: 'c', audio: { audioOutputDevice: 'VBMatrix In 6', channelOffset: 0 } },
+  ],
+});
+eq('multi-device offset hole is closed', String(holeErrs.length), '1');
 
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
 console.log('url-builder: ALL PASS');

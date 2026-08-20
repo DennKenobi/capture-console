@@ -132,14 +132,19 @@ const meterLastSeen = {};   // device fragment -> ms of last helper line
 let meterData = {};         // device fragment -> {channels, peaks}
 
 function meterTargets() {
-	// player -> {device fragment, channelOffset|null} from current config
+	// player -> {device fragment, channelOffset|null} from current config.
+	// Device strings pass through main's canonical map (Session 10): fragments
+	// naming the same physical endpoint share one representative, so meters and
+	// the grid group correctly whatever spelling each source used.
 	const out = {};
-	if (!lastState || !lastState.config) return out;
+	if (!lastState || !lastState.config || !Array.isArray(lastState.config.sources)) return out;
 	const defs = (lastState.config.defaults && lastState.config.defaults.audio) || {};
+	const canon = lastState.deviceCanon || {};
 	for (const s of lastState.config.sources) {
 		const a = s.audio || {};
+		const raw = a.audioOutputDevice || defs.audioOutputDevice || '';
 		out[s.name] = {
-			device: a.audioOutputDevice || defs.audioOutputDevice || '',
+			device: canon[raw] || raw,
 			offset: a.channelOffset !== undefined ? a.channelOffset : null,
 		};
 	}
@@ -296,13 +301,17 @@ async function amConnect() {
 	const config = JSON.parse(JSON.stringify(lastState.config));
 	const defDev = (config.defaults && config.defaults.audio && config.defaults.audio.audioOutputDevice) || '';
 	const moved = [];
+	const canon = lastState.deviceCanon || {};
 	for (const [player, mv] of amStaged) {
 		const src = config.sources.find(s => s.name === player);
 		if (!src) continue;
 		src.audio = src.audio || {};
 		src.audio.channelOffset = mv.offset;
-		// pin the device only when it differs from what the player already resolves to
-		if (mv.device !== (src.audio.audioOutputDevice || defDev)) src.audio.audioOutputDevice = mv.device;
+		// pin the device only when it differs PHYSICALLY from what the player
+		// already resolves to (canonical compare — spelling differences are not
+		// a device change, Session 10)
+		const cur = src.audio.audioOutputDevice || defDev;
+		if ((canon[mv.device] || mv.device) !== (canon[cur] || cur)) src.audio.audioOutputDevice = mv.device;
 		moved.push(player);
 	}
 	const res = await window.cc.saveConfig(config);

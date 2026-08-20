@@ -157,14 +157,37 @@ function previewSync() {
 const meters = new Map(); // device fragment -> {child, backoffIdx, timer, retired}
 const METER_BACKOFF_MS = [2000, 5000, 15000, 60000];
 
+// Session 10: configured device strings that are the same physical endpoint
+// (normalize-substring relation — a fragment vs the dropdown's full label)
+// collapse onto one representative: one meter helper per PHYSICAL endpoint,
+// one grid group, meter IPC keyed consistently. First-seen fragment wins as
+// the representative; the map ships to the renderer in `state`.
+function deviceCanon() {
+	const config = readJson(configPath);
+	const canon = {};
+	if (config && Array.isArray(config.sources)) {
+		const defDev = (config.defaults && config.defaults.audio && config.defaults.audio.audioOutputDevice) || '';
+		const reps = [];
+		for (const s of config.sources) {
+			const dev = (s.audio && s.audio.audioOutputDevice) || defDev;
+			if (!dev || canon[dev]) continue;
+			const rep = reps.find(r => builder.sameDevice(r, dev));
+			canon[dev] = rep || dev;
+			if (!rep) reps.push(dev);
+		}
+	}
+	return canon;
+}
+
 function meterEndpoints() {
 	const config = readJson(configPath);
 	const out = new Set();
 	if (config && config.sources && !builder.validateConfig(config).length) {
+		const canon = deviceCanon();
 		const defDev = (config.defaults && config.defaults.audio && config.defaults.audio.audioOutputDevice) || '';
 		for (const s of config.sources) {
 			const dev = (s.audio && s.audio.audioOutputDevice) || defDev;
-			if (dev) out.add(dev);
+			if (dev) out.add(canon[dev] || dev);
 		}
 	}
 	return out;
@@ -514,6 +537,7 @@ ipcMain.handle('state', () => {
 		sceneMismatch: mismatch ? path.basename(rawStatus.configPath) : '',
 		config,
 		configErrors: config ? builder.validateConfig(config) : ['sources.json missing or unparsable'],
+		deviceCanon: deviceCanon(),
 		supervisorPid: pid,
 		// a status snapshot older than 8 s means the supervisor is wedged or gone
 		status: ourStatus(),

@@ -103,7 +103,7 @@ function validateConfig(config) {
 		errors.push('config.sources must be an array');
 		return errors;
 	}
-	const names = new Set(), ndiNames = new Set(), offsets = new Map();
+	const names = new Set(), ndiNames = new Set(), usedOffsets = [];
 	for (const s of config.sources) {
 		const label = s.name || '<unnamed>';
 		if (!s.name) errors.push('every source needs a name');
@@ -117,10 +117,17 @@ function validateConfig(config) {
 		if (a.channelOffset !== undefined && a.channelOffset !== null && a.channelOffset !== '') {
 			const off = parseInt(a.channelOffset, 10);
 			if (Number.isNaN(off) || off < 0 || off > 7) errors.push(`${label}: channelOffset must be 0-7`);
-			if (offsets.has(off) && offsets.get(off) === a.audioOutputDevice) {
-				errors.push(`${label}: channelOffset ${off} already used on device "${a.audioOutputDevice}"`);
+			// Session 10: device identity via the normalize-substring relation — a
+			// fragment and a full dropdown label naming the same endpoint are ONE
+			// device. Every (offset, device) pair is remembered (the old per-offset
+			// map only kept the last device seen — multi-device hole, Session 8).
+			const dev = a.audioOutputDevice || '';
+			const clash = usedOffsets.find(u => u.off === off
+				&& (u.dev === '' && dev === '' ? true : sameDevice(u.dev, dev)));
+			if (clash) {
+				errors.push(`${label}: channelOffset ${off} already used on device "${dev || '(default)'}" by ${clash.label}`);
 			}
-			offsets.set(off, a.audioOutputDevice);
+			usedOffsets.push({ off, dev, label });
 		}
 		const v = resolveVideo(s, config.defaults);
 		for (const [k, lo, hi] of [['width', 320, 3840], ['height', 180, 2160], ['fps', 1, 120]]) {
