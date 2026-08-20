@@ -621,6 +621,38 @@ ipcMain.handle('audio-devices', async () => {
 	return data;
 });
 
+// In-app Help (Session 11 Part C): the manual as themed static HTML, rendered
+// at authoring time by scripts/render-docs.js and checked in — the app gains no
+// markdown dependency and no build step (§0). A PLAIN visible window, never the
+// offscreen class, so none of the OSR destroy-wedge rules apply here.
+let helpWin = null;
+ipcMain.handle('open-help', () => {
+	if (helpWin && !helpWin.isDestroyed()) { helpWin.focus(); return { ok: true }; }
+	const page = path.join(__dirname, '..', 'ecandi-docs', 'html', 'MANUAL.html');
+	if (!fs.existsSync(page)) return { error: 'documentation not found — run scripts/render-docs.js' };
+	helpWin = new BrowserWindow({
+		width: 980, height: 900, title: 'ECANDI — Help', icon: APP_ICON,
+		webPreferences: { contextIsolation: true, nodeIntegration: false },
+	});
+	helpWin.removeMenu();
+	// Docs are local and trusted, but they are still content: anything that
+	// tries to leave the two rendered pages opens in the operator's browser
+	// rather than navigating this window.
+	helpWin.webContents.setWindowOpenHandler(({ url }) => {
+		require('electron').shell.openExternal(url);
+		return { action: 'deny' };
+	});
+	helpWin.webContents.on('will-navigate', (ev, url) => {
+		if (!url.startsWith('file://')) {
+			ev.preventDefault();
+			require('electron').shell.openExternal(url);
+		}
+	});
+	helpWin.on('closed', () => { helpWin = null; });
+	helpWin.loadFile(page);
+	return { ok: true };
+});
+
 ipcMain.handle('audio-mute', (e, player, on) => {
 	if (on) muteIntent.add(player); else muteIntent.delete(player);
 	muteSync(true);
@@ -706,7 +738,8 @@ app.whenReady().then(() => {
 	// One boot line of runtime identity (Session 11): the packaged-runtime
 	// landmine check — 43.3.0-qp20 must ship, never the win10 default — reads
 	// straight off any captured console log.
-	console.log(`[ecandi] electron=${process.versions.electron} packaged=${app.isPackaged} exe=${process.execPath} scene=${configPath}`);
+	console.log(`[ecandi] electron=${process.versions.electron} packaged=${app.isPackaged} exe=${process.execPath}`);
+	console.log(`[ecandi] scene=${configPath} profile=${app.getPath('userData')}`);
 	// Operator console: always expose the full accessibility tree (screen readers,
 	// UI automation). Cost is negligible at this page size.
 	app.setAccessibilitySupportEnabled(true);
@@ -724,9 +757,13 @@ app.whenReady().then(() => {
 	win.removeMenu();
 	win.loadFile(path.join(__dirname, 'console.html'));
 	mainWin = win;
-	// closing the console window closes its pop-outs too (they are children in
-	// spirit; without this, window-all-closed never fires while a pop-out lives)
-	win.on('closed', popoutsShutdown);
+	// closing the console window closes its pop-outs and Help too (they are
+	// children in spirit; without this, window-all-closed never fires while one
+	// of them lives and the console would linger with no window)
+	win.on('closed', () => {
+		popoutsShutdown();
+		if (helpWin && !helpWin.isDestroyed()) helpWin.close();
+	});
 	previews.init();
 	previewSync();
 	meterSync();

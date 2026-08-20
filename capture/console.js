@@ -667,6 +667,13 @@ $('btnTheme').addEventListener('click', () => {
 });
 applyTheme((() => { try { return localStorage.getItem('ecandi-theme') || 'dark'; } catch { return 'dark'; } })());
 
+// Help (Session 11 Part C): the operator's manual, rendered at authoring time
+// from ecandi-docs/MANUAL.md, in a plain window owned by console main.
+$('btnHelp').addEventListener('click', async () => {
+	const r = await window.cc.openHelp();
+	if (r && r.error) setMsg(r.error);
+});
+
 window.cc.onPreviewFrame(paintPreview);
 window.cc.onMeterUpdate(update => {
 	meterData[update.device] = update;

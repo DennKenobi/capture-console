@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('cc', {
 	sceneNew: () => ipcRenderer.invoke('scene-new'),
 	sceneOpen: () => ipcRenderer.invoke('scene-open'),
 	sceneSaveAs: () => ipcRenderer.invoke('scene-saveas'),
+	openHelp: () => ipcRenderer.invoke('open-help'),
 	onPreviewFrame: cb => ipcRenderer.on('preview-frame', (e, frame) => cb(frame)),
 	onMeterUpdate: cb => ipcRenderer.on('meter-update', (e, update) => cb(update)),
 });

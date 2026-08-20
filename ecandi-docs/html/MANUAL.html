@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ECANDI — Operator's Manual</title>
+<style>
+:root {
+  --bg:#0a0f1f; --panel:#111a30; --panel2:#182238; --border:#2c3a5c; --border-soft:#1f2b47;
+  --text:#e8ecf4; --muted:#93a1bd; --accent:#00e0e9; --accent2:#9b4dff; --code:#0d1526;
+}
+* { box-sizing: border-box; }
+body {
+  margin:0; color:var(--text);
+  background:
+    linear-gradient(168deg, rgba(83,10,138,.30) 0%, rgba(10,15,31,0) 34%),
+    radial-gradient(1300px 760px at 88% -18%, rgba(0,224,233,.17), transparent 60%),
+    radial-gradient(1000px 680px at -12% 118%, rgba(83,10,138,.42), transparent 62%),
+    var(--bg);
+  background-attachment: fixed;
+  font: 15px/1.65 -apple-system,'Segoe UI',system-ui,sans-serif;
+}
+.wrap { max-width: 860px; margin: 0 auto; padding: 34px 28px 90px; }
+h1 {
+  font-size:30px; letter-spacing:.5px; margin:0 0 6px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+h2 { font-size:21px; margin:38px 0 10px; padding-bottom:7px; border-bottom:1px solid var(--border-soft); }
+h3 { font-size:16.5px; margin:26px 0 8px; color:#cfe6ff; }
+p, li { color:var(--text); }
+a { color:var(--accent); text-decoration:none; border-bottom:1px solid rgba(0,224,233,.3); }
+a:hover { color:#03ffff; border-bottom-color:#03ffff; }
+code { background:var(--code); border:1px solid var(--border-soft); border-radius:5px;
+       padding:1px 5px; font:12.5px/1.5 ui-monospace,Consolas,monospace; color:#9fe8ee; }
+pre { background:var(--code); border:1px solid var(--border); border-radius:10px;
+      padding:14px 16px; overflow-x:auto; }
+pre code { background:none; border:0; padding:0; color:#b9c7e0; }
+table { border-collapse:separate; border-spacing:0; width:100%; margin:14px 0;
+        border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+th, td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--border-soft);
+         border-right:1px solid var(--border-soft); vertical-align:top; font-size:14px; }
+th { background:var(--panel2); font-weight:700; }
+tr:last-child td { border-bottom:0; }
+th:last-child, td:last-child { border-right:0; }
+blockquote { margin:16px 0; padding:10px 16px; border-left:3px solid var(--accent);
+             background:rgba(0,224,233,.06); border-radius:0 8px 8px 0; }
+blockquote p { margin:6px 0; color:var(--muted); }
+hr { border:0; border-top:1px solid var(--border-soft); margin:30px 0; }
+img { max-width:100%; border:1px solid var(--border); border-radius:10px; display:block; margin:14px 0; }
+.nav { display:flex; gap:10px; align-items:center; padding:10px 0 18px; border-bottom:1px solid var(--border-soft); margin-bottom:10px; }
+.nav a { padding:5px 14px; border:1px solid var(--border); border-radius:9999px;
+         background:#16203a; font-size:13.5px; font-weight:600; }
+.nav a:hover { border-color:var(--accent); box-shadow:0 0 10px rgba(0,224,233,.25); }
+.nav .here { border-color:var(--accent); color:#03ffff; }
+.foot { margin-top:44px; padding-top:14px; border-top:1px solid var(--border-soft);
+        color:var(--muted); font-size:12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="nav"><a href="QUICKSTART.html">Quick Start</a><a href="MANUAL.html" class="here">Manual</a></div>
+<h1 id="ecandi-operators-manual">ECANDI — Operator's Manual</h1>
+<p>Everything the console can do, what every indicator means, and what to do when
+something looks wrong.</p>
+<p>If you have never run ECANDI before, read <strong><a href="QUICKSTART.html">QUICKSTART.md</a></strong>
+first — this manual assumes you have had one guest working at least once.</p>
+<p><strong>Contents</strong></p>
+<ol>
+<li><a href="#1-how-ecandi-is-put-together">How ECANDI is put together</a></li>
+<li><a href="#2-scenes">Scenes</a></li>
+<li><a href="#3-the-player-table">The player table</a></li>
+<li><a href="#4-the-audio-manager">The Audio Manager</a></li>
+<li><a href="#5-previews-pop-outs-and-meters">Previews, pop-outs, and meters</a></li>
+<li><a href="#6-mute-and-solo">Mute and solo</a></li>
+<li><a href="#7-tally">Tally</a></li>
+<li><a href="#8-troubleshooting">Troubleshooting</a></li>
+<li><a href="#9-configuration-reference">Configuration reference</a></li>
+<li><a href="#10-where-files-live">Where files live</a></li>
+</ol>
+<hr>
+<h2 id="1-how-ecandi-is-put-together">1. How ECANDI is put together</h2>
+<p>You see one window. Behind it, ECANDI runs several processes, and knowing the
+shape of them makes every message in this manual easier to read.</p>
+<pre><code>     ECANDI console  ──────►  supervisor  ──┬──►  video host   (all guests' video)
+     (the window you see)     (no window)   ├──►  audio worker (guest 1)
+                                            └──►  audio worker (guest 2, 3, …)</code></pre>
+<ul>
+<li><strong>The console</strong> is the window. It edits your scene, sends commands, and shows you what is happening. It carries none of your video or audio.</li>
+<li><strong>The supervisor</strong> starts everything, watches it, and restarts what dies. It has no window and keeps running if the console closes.</li>
+<li><strong>The video host</strong> is one process holding every guest's video. One shared process is deliberate: it uses about 40% less CPU than one process per guest, and video carries no audio state, so nothing is risked by sharing.</li>
+<li><strong>Each guest's audio is its own separate process.</strong> Audio is the fragile plane, so it gets full isolation: one guest's audio can crash, be rebuilt, or be reassigned without any other guest — or any video — noticing.</li>
+</ul>
+<p>Three consequences worth internalising:</p>
+<p><strong>Closing the console does not stop your show.</strong> The supervisor and workers keep
+running. Reopening ECANDI on the same scene reconnects you to the live session,
+with all state intact. If the console ever misbehaves mid-show, close it and
+reopen it.</p>
+<p><strong>Nothing is ever changed on a running guest.</strong> Every change — a new channel,
+a different device, a resolution — is applied by rebuilding that one piece from
+your saved configuration. This is why fixing one guest never disturbs another.</p>
+<p><strong>Video and audio are separately delivered.</strong> A guest's video reaching OBS and
+their audio reaching your mixer are two independent facts. Either can be true
+without the other.</p>
+<hr>
+<h2 id="2-scenes">2. Scenes</h2>
+<p>A <strong>scene</strong> is your guest list plus the defaults that apply to them, saved as a
+<code>.json</code> file in <code>Documents\ECANDI\</code>. The file name shows in the title bar and
+next to the ECANDI wordmark.</p>
+<table>
+<thead><tr><th>Button</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><strong>New scene</strong></td><td>Creates an empty scene, keeping your current defaults (same studio, different show)</td></tr>
+<tr><td><strong>Open…</strong></td><td>Switches to another scene file</td></tr>
+<tr><td><strong>Save As…</strong></td><td>Saves the current scene under a new name and switches to it</td></tr>
+</tbody>
+</table>
+<p><strong>Switching scenes while a supervisor is running</strong> is never silent. ECANDI asks
+you to choose:</p>
+<ul>
+<li><strong>Stop everything, then switch</strong> — the clean choice between shows. It waits for every worker to shut down properly.</li>
+<li><strong>Leave it running and switch</strong> — the running session keeps going without a console attached. Reopening that scene later reconnects you to it.</li>
+<li><strong>Cancel</strong>.</li>
+</ul>
+<blockquote><p><strong>One supervisor per folder.</strong> Scenes in the same folder share their
+coordination files, so only one can run at a time. If you open a scene while a
+<em>different</em> scene's session is running in that folder, ECANDI shows a warning
+pill and refuses to send commands rather than talking to the wrong session.
+Keep separate shows in separate folders if you need both running.</p>
+</blockquote>
+<p>An <strong>empty scene is valid.</strong> A fresh scene with no guests starts a working (idle)
+session; add guests and press <strong>Rescan config</strong> to bring them in.</p>
+<hr>
+<h2 id="3-the-player-table">3. The player table</h2>
+<p>One row per guest, with a video plane and an audio plane side by side.</p>
+<h3 id="the-state-chip">The state chip</h3>
+<p>The first thing in each plane cell:</p>
+<table>
+<thead><tr><th>Chip</th><th>Colour</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><strong>RUNNING</strong></td><td>green</td><td>Up and working</td></tr>
+<tr><td><strong>starting</strong></td><td>amber</td><td>Launching, or loading the page</td></tr>
+<tr><td><strong>backoff</strong></td><td>amber</td><td>Failed, waiting before the next automatic retry</td></tr>
+<tr><td><strong>rebuilding</strong></td><td>amber</td><td>Its window crashed; the host is rebuilding it in place</td></tr>
+<tr><td><strong>failed</strong></td><td>red</td><td>Gave up after repeated failures — retries every 5 minutes anyway</td></tr>
+<tr><td><strong>stopped</strong></td><td>grey</td><td>You stopped it</td></tr>
+<tr><td><strong>parked</strong></td><td>grey</td><td>Retired but still holding its NDI name until the host restarts</td></tr>
+</tbody>
+</table>
+<p>Two more you'll see when things aren't wired up rather than broken:</p>
+<ul>
+<li><strong>no supervisor</strong> — nothing is running. Press <strong>Start supervisor</strong>.</li>
+<li><strong>no worker — rescan to start</strong> — the supervisor is running but doesn't know about this guest. Press <strong>Rescan config</strong>.</li>
+<li><strong>not in host — rescan</strong> <em>(on the video thumbnail)</em> — same situation, from the video host's side.</li>
+</ul>
+<h3 id="the-other-chips">The other chips</h3>
+<table>
+<thead><tr><th>Chip</th><th>Meaning</th><th>What to do</th></tr></thead>
+<tbody>
+<tr><td><strong>MUTED</strong></td><td>You muted this guest</td><td><strong>unmute</strong></td></tr>
+<tr><td><strong>audio misrouted — reload audio</strong></td><td>Their audio is genuinely playing to the wrong device</td><td><strong>reload</strong> on the audio plane. Hover it to see where the audio actually went</td></tr>
+<tr><td><strong>PGM</strong></td><td>OBS has this guest on program</td><td>Information only</td></tr>
+<tr><td><strong>PVW</strong></td><td>OBS has this guest in preview</td><td>Information only</td></tr>
+</tbody>
+</table>
+<h3 id="the-stats-line">The stats line</h3>
+<p><code>30 paint-fps · sent 5941 · drop 0 · lat 3.9ms · 232MB</code></p>
+<ul>
+<li><strong>paint-fps</strong> — frames per second arriving from the guest. This follows <em>their</em> camera and connection, not a setting of yours.</li>
+<li><strong>sent</strong> — frames pushed to NDI since this guest started.</li>
+<li><strong>drop</strong> — frames deliberately discarded because the sender was still busy. A handful over a long session is normal and harmless. Thousands means the machine is overloaded.</li>
+<li><strong>lat</strong> — how long a frame takes through ECANDI's own pipeline. Single-digit milliseconds is healthy.</li>
+</ul>
+<h3 id="the-buttons">The buttons</h3>
+<table>
+<thead><tr><th>Button</th><th>Plane</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><strong>reload</strong></td><td>either</td><td>Rebuilds that one plane from the saved configuration. Video takes ~2 s and does not drop the NDI stream; audio takes ~3–7 s</td></tr>
+<tr><td><strong>stop</strong></td><td>either</td><td>Stops that plane. It stays stopped until you start it</td></tr>
+<tr><td><strong>start</strong></td><td>either</td><td>Starts a stopped plane</td></tr>
+<tr><td><strong>preview: on/off</strong></td><td>video</td><td>Turns this row's thumbnail on or off</td></tr>
+<tr><td><strong>pop out</strong></td><td>video</td><td>Opens the thumbnail as its own small window</td></tr>
+<tr><td><strong>mute / unmute</strong>, <strong>solo</strong></td><td>audio</td><td>See <a href="#6-mute-and-solo">Mute and solo</a></td></tr>
+<tr><td><strong>Edit</strong></td><td>row</td><td>Opens the configuration form</td></tr>
+<tr><td><strong>Remove</strong></td><td>row</td><td>Deletes the guest (asks first) and rescans</td></tr>
+</tbody>
+</table>
+<h3 id="adding-and-editing-guests">Adding and editing guests</h3>
+<p><strong>Edit</strong> (or <strong>+ Add player</strong>) opens the form. Paste a vdo.ninja link in the top
+field and ECANDI fills in the Stream ID and room, keeps parameters it doesn't
+manage (like <code>&amp;solo</code> and passwords), and drops the ones it sets itself.</p>
+<p>The three lines below the form show the exact video URL, audio URL, and NDI name
+that will be used — check them before saving.</p>
+<ul>
+<li><strong>Saving a new guest</strong> rescans automatically, bringing them up.</li>
+<li><strong>Saving an edit to an existing guest</strong> only writes the file. Press <strong>reload</strong> on the affected plane to apply it. This is deliberate: you choose the moment a live guest gets rebuilt.</li>
+</ul>
+<hr>
+<h2 id="4-the-audio-manager">4. The Audio Manager</h2>
+<p>Below the table: one block per audio device in use, one row per channel, showing
+each channel's live level and which guest is assigned to it. Guests with no
+channel yet pool under <strong>Unassigned</strong>.</p>
+<p><strong>To move a guest to another channel:</strong> click their chip, then click the channel
+row you want. Nothing has happened yet — the move is <em>staged</em>, and the staged
+line tells you what will happen. Then:</p>
+<ul>
+<li><strong>Connect</strong> — saves the configuration and rebuilds that guest's audio. Their audio is silent for about 3–7 seconds. Their video does not move, and no other guest is affected.</li>
+<li><strong>Discard</strong> — forget the staged move.</li>
+</ul>
+<p>Assigning onto an occupied channel is refused before anything is staged; the
+grid will tell you who is already there.</p>
+<p>The channel row shows both numbers: <code>ch3  off 2</code> means channel 3, which is
+<code>channelOffset: 2</code> in the file. Channels count from 1; offsets count from 0.</p>
+<hr>
+<h2 id="5-previews-pop-outs-and-meters">5. Previews, pop-outs, and meters</h2>
+<h3 id="previews">Previews</h3>
+<p>The thumbnail on each row is <strong>ECANDI receiving its own NDI stream back over the
+network</strong> at a low-bandwidth proxy resolution. It is therefore honest: if the
+thumbnail moves, OBS is getting frames.</p>
+<ul>
+<li><strong>Previews: ON/OFF</strong> in the top bar toggles all rows; <strong>preview: on/off</strong> toggles one row.</li>
+<li>Turning a preview off genuinely disconnects the receiver. This matters: a connected receiver makes the sender do extra encoding work. All six previews cost about 0.08 CPU cores on the sending side — small, but if you are chasing performance, turn them off.</li>
+<li>A thumbnail that <strong>dims</strong> has had no new frame for a few seconds. A stopped or parked guest's last frame stays on screen, so the dimming and the badge are how you tell a frozen picture from a live one.</li>
+</ul>
+<p><strong>Pop out</strong> opens the same frames in a separate small window — useful for
+watching one guest while you work elsewhere. Pop-outs create no additional
+network load and close with the console.</p>
+<h3 id="meters">Meters</h3>
+<p>The bar on each audio plane is the <strong>actual signal level at the audio device</strong>,
+read from Windows — not something ECANDI infers. If the bar moves, that guest's
+audio genuinely arrived on that channel.</p>
+<p>Two things to know about reading them:</p>
+<ul>
+<li><strong>They fall slowly.</strong> Virtual-cable meters decay at roughly 7 dB per second, so a hard cut takes several seconds to visibly reach zero. Wait ~6–7 seconds before concluding a channel is dead.</li>
+<li><strong>Grey meters mean the meter helper died</strong>, not that audio stopped. ECANDI restarts it automatically within seconds.</li>
+</ul>
+<hr>
+<h2 id="6-mute-and-solo">6. Mute and solo</h2>
+<p><strong>Mute</strong> silences one guest at the ECANDI end. It mutes the audio page's output —
+it does not change routing, touch the audio graph, or reconnect anything.
+Unmuting is immediate and the stream never drops.</p>
+<p><strong>Solo</strong> mutes everyone else.</p>
+<p>Mute is a live action, not part of your saved scene, so:</p>
+<ul>
+<li>It is <strong>not</strong> written to the scene file.</li>
+<li>If a muted guest's audio is rebuilt, ECANDI re-applies the mute within a few seconds (a fresh page always starts unmuted).</li>
+<li>Closing the console forgets your mute intentions; the guests keep whatever mute state they currently have, and the reopened console shows the truth.</li>
+</ul>
+<p>The <strong>MUTED</strong> chip plus a dead meter is the proof it worked — the chip alone
+reports intent, the meter reports reality.</p>
+<hr>
+<h2 id="7-tally">7. Tally</h2>
+<p>When OBS (via DistroAV) puts a guest on program or preview, that state travels
+back to ECANDI and tints the row, with a <strong>PGM</strong> or <strong>PVW</strong> chip.</p>
+<p>Expect the highlight to follow a scene change within a few seconds. If you want
+it snappier, lower <code>tallySec</code> (see the <a href="#9-configuration-reference">configuration
+reference</a>).</p>
+<p>Not every NDI consumer sends tally. NDI Studio Monitor, for instance, does not,
+even with its tally setting on — so a blank tally state means &quot;nothing is
+telling us&quot;, not &quot;nobody is watching&quot;.</p>
+<hr>
+<h2 id="8-troubleshooting">8. Troubleshooting</h2>
+<h3 id="a-guests-video-never-appears">A guest's video never appears</h3>
+<p>Check the video plane chip first.</p>
+<ul>
+<li><strong>starting</strong> for a long time — the guest's browser probably isn't connected. Confirm they are actually live on the vdo.ninja link.</li>
+<li><strong>failed</strong> — ECANDI tried and gave up; it retries every 5 minutes. Press <strong>start</strong> once the guest is definitely online.</li>
+<li><strong>The thumbnail shows a static picture</strong> — look for dimming and a badge. A parked or stopped surface keeps its last frame.</li>
+</ul>
+<p>If the link came from a vdo.ninja <strong>room</strong>, make sure it is a <strong>solo</strong> link. An
+in-room view link without <code>&amp;solo</code> connects to nothing and gives no error.</p>
+<h3 id="a-guest-has-no-audio">A guest has no audio</h3>
+<p>Work through it in this order — each step distinguishes two different faults:</p>
+<ol>
+<li><strong>Is their meter completely flat, with RUNNING on the audio plane?</strong> Then ECANDI is connected and receiving silence. The usual cause is a muted or wrong microphone at the guest's end. A live but quiet room still reads a small non-zero level; a genuinely muted mic reads flat zero.</li>
+<li><strong>Is there an <code>audio misrouted — reload audio</code> chip?</strong> Their audio is playing, but to the wrong device — vdo.ninja occasionally loses the race to pick the output device and falls back to the system default. Press <strong>reload</strong> on the audio plane. Hovering the chip tells you where the sound actually went.</li>
+<li><strong>Is the audio plane chip <code>failed</code> or <code>stopped</code>?</strong> Press <strong>start</strong>.</li>
+<li><strong>Are they on the channel you think?</strong> Check the Audio Manager. Remember offset 0 = channel 1.</li>
+</ol>
+<h3 id="everything-is-choppy">Everything is choppy</h3>
+<p>Look at <strong>drop</strong> and <strong>paint-fps</strong> across the rows.</p>
+<ul>
+<li><strong>Low paint-fps on one guest, others fine</strong> — that guest's connection or camera. Not your machine.</li>
+<li><strong>Everything degraded at once</strong> — the machine is saturated. Close what you can, turn previews off, and consider lowering resolution for some guests (720p costs roughly half of 1080p). ECANDI degrades gracefully under load and recovers on its own when the pressure lifts.</li>
+</ul>
+<p>Running the guests' browsers on the <em>same</em> machine as ECANDI is by far the most
+expensive thing you can do. In a real show they are on the guests' machines.
+Also: guests on Chrome or Edge cost noticeably less than guests on Firefox.</p>
+<h3 id="a-guests-ndi-name-wont-come-back-after-removing-and-re-adding-them">A guest's NDI name won't come back after removing and re-adding them</h3>
+<p>ECANDI handles this automatically now — it reuses the parked sender. If you ever
+see a guest stuck starting with a blank preview right after a delete-and-re-add,
+restart the supervisor and it will clear.</p>
+<p>NDI names linger for several minutes after a process exits, by design of NDI
+itself; ECANDI retries patiently rather than renaming the stream, because your
+OBS scenes are bound to the name.</p>
+<h3 id="the-console-wont-send-commands-and-shows-a-warning-pill">The console won't send commands and shows a warning pill</h3>
+<p>Another scene in the same folder is running. See <a href="#2-scenes">Scenes</a>.</p>
+<h3 id="something-is-deeply-wrong-and-i-want-a-clean-slate">Something is deeply wrong and I want a clean slate</h3>
+<p><strong>Stop everything</strong>, wait for the rows to go grey, then <strong>Start supervisor</strong>.
+If the console itself is unresponsive, close it — the workers survive — and
+reopen it.</p>
+<h3 id="the-log">The log</h3>
+<p><code>Documents\ECANDI\supervisor.log</code> has every worker's output with timestamps. It
+rotates at 5 MB, keeping one previous generation as <code>supervisor.log.1</code>. When
+something is unexplained, the answer is almost always in there.</p>
+<hr>
+<h2 id="9-configuration-reference">9. Configuration reference</h2>
+<p>Everything in the editor maps to a field in the scene file. You can edit the
+file directly when ECANDI is closed; the console never mutates a running guest
+from it without you asking.</p>
+<h3 id="per-guest-fields">Per-guest fields</h3>
+<table>
+<thead><tr><th>Editor field</th><th>File field</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Name</td><td><code>name</code></td><td>Must be unique. Used in logs and as the NDI name's suffix</td></tr>
+<tr><td>Stream ID</td><td><code>streamId</code></td><td>The vdo.ninja stream identifier</td></tr>
+<tr><td>Room</td><td><code>room</code></td><td>Blank inherits the scene default</td></tr>
+<tr><td>NDI name</td><td><code>video.ndiName</code></td><td>Blank means <code>&lt;prefix&gt;&lt;Name&gt;</code></td></tr>
+<tr><td>Width / Height / FPS</td><td><code>video.width/height/fps</code></td><td>Blank inherits defaults. 320–3840 × 180–2160, 1–120 fps</td></tr>
+<tr><td>Video extra params</td><td><code>video.extraParams</code></td><td>Appended raw to the video URL</td></tr>
+<tr><td>Audio output device</td><td><code>audio.audioOutputDevice</code></td><td>A <strong>label fragment</strong> matching exactly one playback device</td></tr>
+<tr><td>Channel offset</td><td><code>audio.channelOffset</code></td><td>0–7, meaning channels 1–8. Must be unique per device</td></tr>
+<tr><td>Channels</td><td><code>audio.channels</code></td><td>Almost always 8. Required for multi-channel placement</td></tr>
+<tr><td>Audio extra params</td><td><code>audio.extraParams</code></td><td>Appended raw to the audio URL</td></tr>
+</tbody>
+</table>
+<p><strong>About the audio device fragment:</strong> it matches by normalized substring, and the
+first match wins — so it must be unique to one device. On a machine with eight
+<code>VBMatrix In N (VB-Audio Matrix VAIO)</code> endpoints, the fragment <code>VAIO</code> matches
+all eight unpredictably, while <code>VBMatrix In 6</code> matches exactly one. The editor's
+dropdown gives you full labels, so use it rather than typing.</p>
+<h3 id="scene-defaults">Scene defaults</h3>
+<p>Anything a guest leaves blank falls back to <code>defaults</code>:</p>
+<table>
+<thead><tr><th>Field</th><th>Default</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>ndiPrefix</code></td><td><code>CC-</code></td><td>Changing it renames every stream — your OBS sources will need repointing</td></tr>
+<tr><td><code>vdoBase</code></td><td><code>https://vdo.ninja/</code></td><td>For self-hosted instances</td></tr>
+<tr><td><code>videoTopology</code></td><td><code>consolidated</code></td><td><code>per-player</code> gives one process per guest: more isolation, ~40% more CPU</td></tr>
+<tr><td><code>video.senderMode</code></td><td><code>native</code></td><td><code>inline</code> is a fallback path costing about twice the CPU. ECANDI switches to it by itself if the native module can't load</td></tr>
+<tr><td><code>video.statsSec</code></td><td><code>10</code></td><td>How often the stats line updates, 2–120 s</td></tr>
+<tr><td><code>video.tallySec</code></td><td><code>2</code></td><td>How often tally is polled. Lower means a snappier PGM highlight</td></tr>
+<tr><td><code>video.ndiDepth</code></td><td>8 inline / 2 native</td><td>Send pipeline depth. Leave it alone unless you're benchmarking</td></tr>
+</tbody>
+</table>
+<h3 id="what-ecandi-checks-before-saving">What ECANDI checks before saving</h3>
+<p>Unique names, unique NDI names, channel offsets in range and unique per device,
+and resolution/framerate within limits. A scene that fails validation is not
+saved and the console tells you why.</p>
+<hr>
+<h2 id="10-where-files-live">10. Where files live</h2>
+<table>
+<thead><tr><th>What</th><th>Where</th><th>Survives uninstall</th></tr></thead>
+<tbody>
+<tr><td>Scenes</td><td><code>Documents\ECANDI\*.json</code></td><td><strong>Yes</strong></td></tr>
+<tr><td>Log</td><td><code>Documents\ECANDI\supervisor.log</code></td><td><strong>Yes</strong></td></tr>
+<tr><td>Worker profiles</td><td><code>Documents\ECANDI\.workers\</code></td><td><strong>Yes</strong></td></tr>
+<tr><td>Console settings (theme, window)</td><td><code>%APPDATA%\ECANDI</code></td><td><strong>Yes</strong></td></tr>
+<tr><td>The application</td><td><code>%LOCALAPPDATA%\Programs\ECANDI</code></td><td>No — this is what gets removed</td></tr>
+</tbody>
+</table>
+<p>Upgrading ECANDI replaces only the last row. Your scenes, logs, and settings are
+untouched by both upgrade and uninstall.</p>
+<p>Alongside the app you'll also find <code>NOTICE.md</code> (licensing and the NDI terms that
+travel with the software) and <code>LICENSE.md</code> (ECANDI is GPL-3.0, derived from
+Steve Seguin's Electron Capture).</p>
+<hr>
+<p>*NDI® is a registered trademark of Vizrt NDI AB. ECANDI is not a product of
+Vizrt NDI AB.*</p>
+<div class="foot">ECANDI documentation — generated from MANUAL.md by scripts/render-docs.js.
+NDI&reg; is a registered trademark of Vizrt NDI AB.</div>
+</div>
+</body>
+</html>
