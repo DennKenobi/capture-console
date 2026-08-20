@@ -4,18 +4,19 @@
 <meta charset="utf-8">
 <title>ECANDI</title>
 <style>
-  /* Operator console — Session 10 Part B, iteration 2 (Dennis's direction):
-     Electron Capture's own visual language, sampled from upstream docs/index.html —
-     deep blue-slate ground (#0f1419/#192734/#22303c), EC blue #1d9bf0 + purple
-     #7856ff with the 135° gradient, rounded cards, pill buttons, accent-glow
-     hovers. Function-first hierarchy unchanged: state at a glance across 8 rows,
-     one chip language, dense but readable. Two themes on CSS variables; dark is
-     default (broadcast rooms), toggle persisted. Vanilla CSS by design. */
+  /* Operator console — Session 10 Part B, iteration 3 (Dennis's direction):
+     pushed toward Electron Capture's APP look (neon-glow controls on a
+     near-black gradient ground, generous sizing) using the ECANDI logo's own
+     color family — brand cyan #00e0e9 (glow #03ffff), deep purple #530a8a,
+     blue-black ground #0a0f1f (assets/ecandi-logo*.svg). Function-first
+     hierarchy unchanged: state at a glance across 8 rows, one chip language.
+     Two themes on CSS variables; dark default, toggle persisted. Vanilla CSS. */
   :root {
     --bg: #f5f7f8; --bg-wash: none; --panel: #fff; --panel2: #eef2f4;
     --border: #cdd8dd; --border-soft: #e2e9ec;
     --text: #182026; --muted: #5c7080; --faint: #98a8b0;
-    --accent: #1d9bf0; --accent-hover: #1a8cd8; --accent2: #7856ff; --accent-bg: #d6ebff;
+    --accent: #0899a5; --accent-hover: #067d87; --accent2: #7b2fd0; --accent-bg: #d4f4f6;
+    --accent-fg: #fff;
     --ok: #067a53; --ok-bg: #d9f2e8;
     --warn: #8a6100; --warn-bg: #ffedc2;
     --bad: #a82a2a; --bad-bg: #fde3e3;
@@ -24,71 +25,81 @@
     --meter-bg: #dde5e9; --meter-fill: #8aa5b3; --meter-hot: #00ba7c;
     --btn-bg: #fbfdfe; --btn-border: #b8c4ca; --btn-hover: #eef4f7;
     --canvas-bg: #10161a;
-    --glow-pgm: none; --glow-hot: none; --glow-accent: none;
+    --glow-pgm: none; --glow-hot: none; --glow-accent: none; --glow-soft: none;
   }
   body.dark {
-    /* upstream EC palette verbatim: bg-primary/secondary/card, border, text, success */
-    --bg: #0f1419; --panel: #192734; --panel2: #22303c;
-    --bg-wash: radial-gradient(1100px 560px at 88% -12%, rgba(120, 86, 255, 0.16), transparent 62%),
-               radial-gradient(950px 520px at -8% 112%, rgba(29, 155, 240, 0.13), transparent 60%);
-    --border: #38444d; --border-soft: #2c3740;
-    --text: #e7e9ea; --muted: #8b98a5; --faint: #5c6b73;
-    --accent: #1d9bf0; --accent-hover: #1a8cd8; --accent2: #7856ff; --accent-bg: #16405c;
-    --ok: #00ba7c; --ok-bg: #0c3328;
-    --warn: #e3af45; --warn-bg: #3a2d10;
-    --bad: #e35d5d; --bad-bg: #421717;
-    --pgm: #e04338; --pgm-bg: #3a1512;
-    --pvw: #00ba7c; --pvw-bg: #0c3328;
-    --meter-bg: #22303c; --meter-fill: #48606f; --meter-hot: #00ba7c;
-    --btn-bg: #22303c; --btn-border: #38444d; --btn-hover: #2c3d4c;
-    --glow-pgm: 0 0 10px rgba(224, 67, 56, 0.55);
-    --glow-hot: 0 0 8px rgba(0, 186, 124, 0.45);
-    --glow-accent: 0 0 10px rgba(29, 155, 240, 0.35);
+    /* ECANDI logo family: ground #0a0f1f, cyan #00e0e9/#03ffff, purple #530a8a */
+    --bg: #0a0f1f;
+    --bg-wash: linear-gradient(168deg, rgba(83, 10, 138, 0.30) 0%, rgba(10, 15, 31, 0) 34%),
+               radial-gradient(1300px 760px at 88% -18%, rgba(0, 224, 233, 0.17), transparent 60%),
+               radial-gradient(1000px 680px at -12% 118%, rgba(83, 10, 138, 0.42), transparent 62%),
+               radial-gradient(900px 500px at 55% 130%, rgba(0, 224, 233, 0.08), transparent 55%);
+    --panel: #111a30; --panel2: #182238;
+    --border: #2c3a5c; --border-soft: #1f2b47;
+    --text: #e8ecf4; --muted: #93a1bd; --faint: #5c6b8a;
+    --accent: #00e0e9; --accent-hover: #03ffff; --accent2: #9b4dff; --accent-bg: #0b3a45;
+    --accent-fg: #041e26;
+    --ok: #2ee66b; --ok-bg: #0a3321;
+    --warn: #ffc94d; --warn-bg: #3a2d10;
+    --bad: #ff5c5c; --bad-bg: #451418;
+    --pgm: #ff4136; --pgm-bg: #3d1215;
+    --pvw: #2ee66b; --pvw-bg: #0a3321;
+    --meter-bg: #141d33; --meter-fill: #3d4f78; --meter-hot: #2ee66b;
+    --btn-bg: #16203a; --btn-border: #2c3a5c; --btn-hover: #1d2a4a;
+    --glow-pgm: 0 0 12px rgba(255, 65, 54, 0.6);
+    --glow-hot: 0 0 10px rgba(46, 230, 107, 0.55);
+    --glow-accent: 0 0 12px rgba(0, 224, 233, 0.5);
+    --glow-soft: 0 0 8px rgba(0, 224, 233, 0.25);
   }
-  body { font: 13px/1.4 -apple-system, 'Segoe UI', system-ui, sans-serif; margin: 10px 12px;
-         color: var(--text); background: var(--bg); min-height: calc(100vh - 20px); }
+  body { font: 14px/1.45 -apple-system, 'Segoe UI', system-ui, sans-serif; margin: 12px 14px;
+         color: var(--text); background: var(--bg); min-height: calc(100vh - 24px); }
   body.dark { background: var(--bg-wash), var(--bg); background-attachment: fixed; }
 
-  /* ---- top bar: brand · scene · grouped controls --------------------------- */
-  .bar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-  .brand { font-size: 16px; font-weight: 800; letter-spacing: 1px; margin-right: 2px;
+  /* ---- top bar: logo · brand · scene · grouped controls -------------------- */
+  .bar { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .brandlogo { width: 30px; height: 30px; display: block;
+               filter: drop-shadow(0 0 6px rgba(3, 255, 255, 0.35)); }
+  .brand { font-size: 18px; font-weight: 800; letter-spacing: 1.5px; margin-right: 2px;
            background: linear-gradient(135deg, var(--accent), var(--accent2));
            -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .scene { color: var(--muted); font-size: 12px; margin-right: 6px; }
-  .grp { display: inline-flex; gap: 4px; align-items: center; padding-right: 8px; margin-right: 2px;
+  .scene { color: var(--muted); font-size: 13px; margin-right: 8px; }
+  .grp { display: inline-flex; gap: 5px; align-items: center; padding-right: 9px; margin-right: 2px;
          border-right: 1px solid var(--border-soft); }
   .grp:last-child { border-right: 0; }
-  .pill { padding: 2px 10px; border-radius: 9999px; font-weight: 600; font-size: 12px; }
+  .pill { padding: 3px 12px; border-radius: 9999px; font-weight: 600; font-size: 13px; }
   .pill.up { background: var(--ok-bg); color: var(--ok); box-shadow: var(--glow-hot); }
   .pill.down { background: var(--bad-bg); color: var(--bad); }
 
-  button { font: inherit; font-size: 12px; padding: 3px 11px; cursor: pointer; border-radius: 9999px;
+  button { font: inherit; font-size: 13px; padding: 4px 14px; cursor: pointer; border-radius: 9999px;
            background: var(--btn-bg); color: var(--text); border: 1px solid var(--btn-border);
            transition: border-color 0.15s, background 0.15s, box-shadow 0.15s; }
-  button:hover:not(:disabled) { background: var(--btn-hover); border-color: var(--accent); }
+  button:hover:not(:disabled) { background: var(--btn-hover); border-color: var(--accent);
+                                box-shadow: var(--glow-soft); }
   button:disabled { opacity: 0.45; cursor: default; }
   button.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent);
                   box-shadow: var(--glow-accent); }
-  #btnStart { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-  #btnStart:hover:not(:disabled) { background: var(--accent-hover); }
+  #btnStart { background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
+              font-weight: 700; box-shadow: var(--glow-accent); }
+  #btnStart:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
   #btnStopAll, button[data-remove] { border-color: var(--bad); color: var(--bad); }
-  #btnStopAll:hover:not(:disabled), button[data-remove]:hover { background: var(--bad-bg); border-color: var(--bad); }
+  #btnStopAll:hover:not(:disabled), button[data-remove]:hover { background: var(--bad-bg);
+              border-color: var(--bad); box-shadow: 0 0 8px rgba(255, 92, 92, 0.3); }
 
   /* ---- players table (rounded card; inner grid lines only) ------------------ */
   table { border-collapse: separate; border-spacing: 0; width: 100%; background: var(--panel);
-          border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+          border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
   th, td { border-bottom: 1px solid var(--border-soft); border-right: 1px solid var(--border-soft);
-           padding: 4px 8px; text-align: left; vertical-align: top; }
+           padding: 6px 10px; text-align: left; vertical-align: top; }
   th:last-child, td:last-child { border-right: 0; }
   tbody tr:last-child td { border-bottom: 0; }
-  th { background: var(--panel2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px;
+  th { background: var(--panel2); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
        color: var(--muted); }
-  td.mono, .mono { font-family: Consolas, monospace; font-size: 12px; }
+  td.mono, .mono { font-family: Consolas, monospace; font-size: 12.5px; }
   td .mono { color: var(--muted); }
-  #rows td:first-child { font-size: 14px; }
+  #rows td:first-child { font-size: 15px; }
 
   /* state chips: one visual language for worker/surface state everywhere */
-  .st { display: inline-block; padding: 0 7px; border-radius: 9999px; font-weight: 700; font-size: 11px;
+  .st { display: inline-block; padding: 1px 9px; border-radius: 9999px; font-weight: 700; font-size: 12px;
         text-transform: uppercase; letter-spacing: 0.3px;
         background: var(--panel2); color: var(--muted); }
   .st.running { background: var(--ok-bg); color: var(--ok); }
@@ -97,14 +108,14 @@
   .st.stopped, .st.idle, .st.unknown, .st.parked { background: var(--panel2); color: var(--muted); }
 
   .planebtns { white-space: nowrap; }
-  .planebtns button { padding: 2px 9px; }
+  .planebtns button { padding: 3px 11px; }
 
   /* chips: worker-truth (muted), alarm (misroute), tally */
-  .mutedchip { background: var(--bad-bg); color: var(--bad); font-size: 10px; font-weight: 700;
-               padding: 1px 6px; border-radius: 9999px; }
-  .misroutechip { background: var(--bad); color: #fff; font-size: 10px; font-weight: 700;
-                  padding: 1px 7px; border-radius: 9999px; box-shadow: var(--glow-pgm); }
-  .tallychip { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 9999px; }
+  .mutedchip { background: var(--bad-bg); color: var(--bad); font-size: 11px; font-weight: 700;
+               padding: 1px 8px; border-radius: 9999px; }
+  .misroutechip { background: var(--bad); color: #fff; font-size: 11px; font-weight: 700;
+                  padding: 1px 9px; border-radius: 9999px; box-shadow: var(--glow-pgm); }
+  .tallychip { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 9999px; }
   .tallychip.pgm { background: var(--pgm); color: #fff; box-shadow: var(--glow-pgm); }
   .tallychip.pvw { background: var(--pvw-bg); color: var(--pvw); }
   tr.pgm td { background: var(--pgm-bg); }
@@ -113,77 +124,78 @@
   tr.pvw td:first-child { box-shadow: inset 4px 0 0 var(--pvw); }
 
   /* previews + meters */
-  .prevrow { display: flex; gap: 8px; align-items: flex-start; }
+  .prevrow { display: flex; gap: 9px; align-items: flex-start; }
   .prevwrap { position: relative; flex: none; }
-  .prevwrap canvas { display: block; width: 160px; height: 90px; background: var(--canvas-bg);
-                     border: 1px solid var(--border); border-radius: 8px; }
+  .prevwrap canvas { display: block; width: 192px; height: 108px; background: var(--canvas-bg);
+                     border: 1px solid var(--border); border-radius: 9px; }
   .prevwrap canvas.stale { opacity: 0.45; }
   .prevwrap canvas.off { opacity: 0.15; }
-  .pbadge { position: absolute; left: 4px; bottom: 4px; background: rgba(15,20,25,.85); color: #ffce56;
-            font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 9999px; }
-  .meterwrap { display: flex; gap: 6px; align-items: center; margin-bottom: 3px; }
-  .meter { width: 120px; height: 10px; background: var(--meter-bg); border: 1px solid var(--border);
+  .pbadge { position: absolute; left: 5px; bottom: 5px; background: rgba(10,15,31,.87); color: #ffce56;
+            font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 9999px; }
+  .meterwrap { display: flex; gap: 7px; align-items: center; margin-bottom: 4px; }
+  .meter { width: 140px; height: 12px; background: var(--meter-bg); border: 1px solid var(--border);
            border-radius: 9999px; overflow: hidden; }
   .meter.dead { opacity: 0.35; }
   .meterfill { height: 100%; width: 0%; background: var(--meter-fill); transition: width 120ms linear; }
   .meterfill.hot { background: var(--meter-hot); box-shadow: var(--glow-hot); }
-  .mch { font-size: 11px; color: var(--muted); }
+  .mch { font-size: 12px; color: var(--muted); }
 
   /* ---- sections ------------------------------------------------------------ */
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted);
-       margin: 16px 0 6px; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted);
+       margin: 18px 0 7px; }
   /* shared info/error line — amber: attention without alarm (red is reserved
      for the chips that mean something is actually broken) */
-  #msg { color: var(--warn); margin: 6px 0; white-space: pre-wrap; min-height: 1em; }
-  details { margin-top: 12px; color: var(--muted); }
-  pre { font-size: 11px; background: var(--panel); color: var(--text); padding: 8px; overflow: auto;
-        border: 1px solid var(--border); border-radius: 8px; }
+  #msg { color: var(--warn); margin: 7px 0; white-space: pre-wrap; min-height: 1em; }
+  details { margin-top: 14px; color: var(--muted); }
+  pre { font-size: 12px; background: var(--panel); color: var(--text); padding: 9px; overflow: auto;
+        border: 1px solid var(--border); border-radius: 9px; }
 
   /* editor */
-  #editor { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-            padding: 14px; margin-top: 12px; max-width: 980px; }
-  #editor h2 { margin: 0 0 8px; }
-  #editor .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 12px; }
-  #editor label { display: block; font-size: 11px; color: var(--muted); }
-  #editor input, #editor select { width: 100%; box-sizing: border-box; font: inherit; padding: 3px 7px;
+  #editor { background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+            padding: 16px; margin-top: 14px; max-width: 1020px; }
+  #editor h2 { margin: 0 0 9px; }
+  #editor .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px 14px; }
+  #editor label { display: block; font-size: 12px; color: var(--muted); }
+  #editor input, #editor select { width: 100%; box-sizing: border-box; font: inherit; padding: 4px 9px;
             background: var(--bg); color: var(--text); border: 1px solid var(--btn-border);
-            border-radius: 6px; }
+            border-radius: 7px; }
   #editor input:focus, #editor select:focus { outline: none; border-color: var(--accent);
             box-shadow: var(--glow-accent); }
-  #editor .pasterow { margin-bottom: 8px; }
-  #editor .pasterow input { font-family: Consolas, monospace; font-size: 12px; }
-  #editor .urls { margin-top: 8px; font-family: Consolas, monospace; font-size: 11px; word-break: break-all;
+  #editor .pasterow { margin-bottom: 9px; }
+  #editor .pasterow input { font-family: Consolas, monospace; font-size: 12.5px; }
+  #editor .urls { margin-top: 9px; font-family: Consolas, monospace; font-size: 12px; word-break: break-all;
                   color: var(--muted); }
   #editor .urls b { color: var(--text); }
-  .hint { color: var(--muted); font-size: 12px; }
+  .hint { color: var(--muted); font-size: 12.5px; }
 
   /* ---- Audio Manager: aligned with the player rows ------------------------- */
-  .amdev { display: inline-block; vertical-align: top; margin-right: 16px; }
-  .amdevname { font-family: Consolas, monospace; font-size: 11px; text-transform: none;
-               color: var(--muted); margin-bottom: 3px; }
+  .amdev { display: inline-block; vertical-align: top; margin-right: 18px; }
+  .amdevname { font-family: Consolas, monospace; font-size: 12px; text-transform: none;
+               color: var(--muted); margin-bottom: 4px; }
   .amtbl { width: auto; }
-  .amtbl td { padding: 2px 8px; }
+  .amtbl td { padding: 3px 10px; }
   .amch { color: var(--muted); white-space: nowrap; }
   /* channel numbers are 1-based, config offsets are 0-based — show both so the
      operator never has to do the off-by-one in their head (Session 9 feedback) */
-  .amoff { color: var(--faint); font-size: 10px; }
-  .ammeter .meter { width: 120px; }
-  .amcell { min-width: 130px; cursor: pointer; }
+  .amoff { color: var(--faint); font-size: 11px; }
+  .ammeter .meter { width: 140px; }
+  .amcell { min-width: 140px; cursor: pointer; }
   .amcell:hover { background: var(--btn-hover); }
   .amempty { color: var(--faint); }
-  .amchip { padding: 1px 10px; border: 1px solid var(--btn-border); border-radius: 9999px;
+  .amchip { padding: 2px 12px; border: 1px solid var(--btn-border); border-radius: 9999px;
             background: var(--btn-bg); color: var(--text); }
   .amchip.selected { background: var(--accent-bg); border-color: var(--accent);
                      box-shadow: var(--glow-accent); color: var(--accent); }
   .amchip.staged { background: var(--warn-bg); border-color: var(--warn); }
-  .ampool { margin-top: 8px; }
-  .amstagedlist { margin-top: 6px; color: var(--warn); font-size: 12px; }
-  .ambar { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
-  #ammsg { color: var(--bad); font-size: 12px; }
+  .ampool { margin-top: 9px; }
+  .amstagedlist { margin-top: 7px; color: var(--warn); font-size: 12.5px; }
+  .ambar { margin-top: 9px; display: flex; gap: 9px; align-items: center; }
+  #ammsg { color: var(--bad); font-size: 12.5px; }
 </style>
 </head>
 <body class="dark">
   <div class="bar">
+    <img class="brandlogo" src="../assets/ecandi-logo.svg" alt="">
     <span class="brand">ECANDI</span>
     <span class="scene mono" id="sceneName" title=""></span>
     <span class="grp">
@@ -247,7 +259,7 @@
   </div>
 
   <h2>Audio Manager</h2>
-  <div id="amhelp" class="hint" style="margin-bottom:6px">
+  <div id="amhelp" class="hint" style="margin-bottom:7px">
     Click a player chip, then a channel row, to stage a move. Connect saves the config and
     rebuilds exactly that player's audio plane (~3–7 s gap for them; siblings untouched).
   </div>

@@ -359,7 +359,7 @@ function render(state) {
 			<td class="mono" id="sid-${source.name}"></td>
 			<td class="mono" id="ndi-${source.name}"></td>
 			<td><div class="prevrow">
-				<div class="prevwrap"><canvas id="pcv-${source.name}" width="160" height="90"></canvas><span class="pbadge" id="pbadge-${source.name}" hidden></span></div>
+				<div class="prevwrap"><canvas id="pcv-${source.name}" width="192" height="108"></canvas><span class="pbadge" id="pbadge-${source.name}" hidden></span></div>
 				<div><span id="vcell-${source.name}"></span><br>${btns(source.name, 'video')}
 					<button data-prevtoggle="${source.name}" id="ptog-${source.name}">preview</button>
 					<button data-popout="${source.name}" id="pop-${source.name}">pop out</button></div>
