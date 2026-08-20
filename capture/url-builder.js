@@ -10,6 +10,28 @@
 
 'use strict';
 
+/** vdo.ninja's own device-label matching rule (verified against its main.js,
+ *  2026-08-17): both sides pass through replace(/[\W]+/g,"_").toLowerCase(),
+ *  then fragment-substring. Session 10: used EVERYWHERE device identity is
+ *  compared — a fragment ("VBMatrix In 6") and a full dropdown label
+ *  ("VBMatrix In 6 (VB-Audio Matrix VAIO)") are the same physical endpoint. */
+function normalizeDeviceLabel(s) {
+	return String(s || '').replace(/[\W]+/g, '_').toLowerCase();
+}
+
+/** Would vdo.ninja's &audiooutput=<fragment> match this endpoint label? */
+function deviceMatches(fragment, label) {
+	const f = normalizeDeviceLabel(fragment);
+	return !!f && normalizeDeviceLabel(label).includes(f);
+}
+
+/** Are two configured device strings the same physical endpoint? Either may be
+ *  a fragment of the other (config fragment vs dropdown full label). */
+function sameDevice(a, b) {
+	const na = normalizeDeviceLabel(a), nb = normalizeDeviceLabel(b);
+	return !!na && !!nb && (na.includes(nb) || nb.includes(na));
+}
+
 function mergedDefaults(defaults = {}) {
 	return {
 		room: defaults.room || '',
@@ -109,4 +131,7 @@ function validateConfig(config) {
 	return errors;
 }
 
-module.exports = { videoUrl, audioUrl, ndiName, resolveVideo, resolveAudio, validateConfig, mergedDefaults };
+module.exports = {
+	videoUrl, audioUrl, ndiName, resolveVideo, resolveAudio, validateConfig,
+	mergedDefaults, normalizeDeviceLabel, deviceMatches, sameDevice,
+};

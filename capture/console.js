@@ -25,7 +25,7 @@ function fmtStats(st) {
 // (Session 9: "running" next to "(stopped)" read as a bug, and fairly so).
 const EV_STATE = { stopped: 'stopped', 'window-failed': 'failed', 'window-gone': 'rebuilding', exiting: 'parked', ready: 'starting', loaded: 'running' };
 
-function planeCell(worker, playerStats, supUp) {
+function planeCell(worker, playerStats, supUp, misroute) {
 	// distinguish "supervisor down" from "supervisor up but this worker isn't in
 	// its table" (Session 9: the old blanket label misread as a system failure)
 	if (!worker) return supUp
@@ -36,6 +36,12 @@ function planeCell(worker, playerStats, supUp) {
 	let html = `<span class="st ${st}">${st}</span>`;
 	// worker-reported truth (Session 8): the meter dying alongside this chip is the proof
 	if (worker.muted) html += ' <span class="mutedchip">MUTED</span>';
+	// misroute detector (Session 10 Part C): this player's audio is actively
+	// playing on the wrong endpoint — the designed remedy is an audio-plane reload
+	if (misroute) {
+		const tip = `audio is playing on "${misroute.actual}" instead of "${misroute.expected}" — reload the audio plane`;
+		html += ` <span class="misroutechip" title="${tip.replace(/"/g, '&quot;')}">audio misrouted — reload audio</span>`;
+	}
 	if (worker.pid) html += ` <span class="mono">pid ${worker.pid}</span>`;
 	if (worker.restarts) html += ` <span class="mono">restarts ${worker.restarts}</span>`;
 	const stats = playerStats || worker.lastStats;
@@ -361,7 +367,8 @@ function render(state) {
 		const videoWorker = host || workers.get(`${name}/video`);
 		const playerStats = host && host.playerStats ? host.playerStats[name] : null;
 		$(`vcell-${name}`).innerHTML = planeCell(videoWorker, playerStats, up);
-		$(`acell-${name}`).innerHTML = planeCell(workers.get(`${name}/audio`), null, up);
+		const mis = state.misroute && state.misroute.players ? state.misroute.players[name] : null;
+		$(`acell-${name}`).innerHTML = planeCell(workers.get(`${name}/audio`), null, up, mis);
 
 		// preview chrome (targeted updates on existing row DOM)
 		const rowOn = prev.global && prev.available && !prev.rowOff.includes(name);

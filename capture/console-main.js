@@ -212,6 +212,106 @@ function metersShutdown() {
 	meters.clear();
 }
 
+// ---- audio misroute detector (Session 10 Part C) ----------------------------
+// vdo.ninja's &audiooutput can race device enumeration and silently fall back to
+// the system default sink (Session 9, Player6). Verified discriminator (Session 10
+// verify-early, capture/test/session-probe.ps1 — the spec's original "any session
+// on the default endpoint" premise is FALSE: every healthy vdo.ninja page holds an
+// active silent AudioContext session there):
+//   MISROUTED  = worker tree owns ≥1 ACTIVE WASAPI session, but NONE on an
+//                endpoint matching its configured fragment (vdo.ninja's own
+//                normalize-substring rule).
+//   A connected+routed worker's configured-endpoint session persists across
+//   publisher disconnects; a never-connected worker owns no active session at
+//   all — neither can false-flag.
+// Read-only, console-side, zero worker contact: one misroute-stream.ps1 helper
+// enumerates sessions + PID ancestry; workers are matched by root pid from
+// supervisor-status.json. Flags need MISROUTE_CONFIRM_TICKS consecutive misses
+// (covers the brief pre-sink window right after connect); any matching session,
+// worker reload (fresh pid), or worker stop clears immediately.
+
+const MISROUTE_BACKOFF_MS = [2000, 5000, 15000, 60000];
+const MISROUTE_CONFIRM_TICKS = 3; // × 5 s helper cadence ≈ 15 s to confirm
+let misrouteHelper = null;        // {child, backoffIdx, timer, retired}
+let misrouteScan = null;          // latest helper line {default, sessions, at}
+const misrouteMiss = new Map();   // player -> consecutive missing-session ticks
+const misrouteState = new Map();  // player -> {actual, expected}
+
+function misrouteEval() {
+	const scan = misrouteScan;
+	const status = supervisorPid() ? readJson(statusPath) : null;
+	const config = readJson(CONFIG_PATH);
+	const next = new Map();
+	if (scan && status && Date.now() - status.at < 8000 && config && Array.isArray(config.sources)) {
+		const defDev = (config.defaults && config.defaults.audio && config.defaults.audio.audioOutputDevice) || '';
+		for (const w of status.workers) {
+			if (w.plane !== 'audio' || w.consolidated || w.state !== 'running' || !w.pid) continue;
+			const src = config.sources.find(s => s.name === w.player);
+			if (!src) continue;
+			const frag = (src.audio && src.audio.audioOutputDevice) || defDev;
+			if (!frag) { misrouteMiss.delete(w.player); continue; } // default sink is intentional
+			const tree = scan.sessions.filter(s => Array.isArray(s.chain) && s.chain.includes(w.pid));
+			// no active session anywhere = page isn't rendering audio yet (never
+			// connected) — that's "no incoming audio", not a misroute
+			if (!tree.length) { misrouteMiss.delete(w.player); continue; }
+			if (tree.some(s => builder.deviceMatches(frag, s.endpoint))) {
+				misrouteMiss.delete(w.player);
+				continue;
+			}
+			const misses = (misrouteMiss.get(w.player) || 0) + 1;
+			misrouteMiss.set(w.player, misses);
+			if (misses >= MISROUTE_CONFIRM_TICKS) {
+				next.set(w.player, {
+					actual: [...new Set(tree.map(s => s.endpoint))].join(', '),
+					expected: frag,
+				});
+			}
+		}
+	}
+	for (const [player, info] of next) {
+		if (!misrouteState.has(player)) {
+			console.log(`[misroute] ${player}: audio on "${info.actual}", expected "${info.expected}" — flag raised`);
+		}
+	}
+	for (const player of misrouteState.keys()) {
+		if (!next.has(player)) console.log(`[misroute] ${player}: cleared`);
+	}
+	misrouteState.clear();
+	for (const [p, info] of next) misrouteState.set(p, info);
+}
+
+function spawnMisrouteHelper(entry) {
+	entry.child = spawn('powershell.exe', [
+		'-NoProfile', '-ExecutionPolicy', 'Bypass',
+		'-File', path.join(__dirname, 'misroute-stream.ps1'),
+		'-IntervalMs', '5000',
+	], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+	require('readline').createInterface({ input: entry.child.stdout }).on('line', line => {
+		let parsed;
+		try { parsed = JSON.parse(line); } catch { return; }
+		if (parsed.error) { console.log(`[misroute] helper: ${parsed.error}`); return; }
+		entry.backoffIdx = 0; // healthy stream resets the ladder
+		misrouteScan = Object.assign({}, parsed, { at: Date.now() });
+		misrouteEval();
+	});
+	entry.child.on('exit', code => {
+		entry.child = null;
+		if (entry.retired) return;
+		const delay = MISROUTE_BACKOFF_MS[Math.min(entry.backoffIdx, MISROUTE_BACKOFF_MS.length - 1)];
+		entry.backoffIdx++;
+		console.log(`[misroute] helper exited code=${code}; respawn in ${delay / 1000}s`);
+		entry.timer = setTimeout(() => { if (!entry.retired) spawnMisrouteHelper(entry); }, delay);
+	});
+}
+
+function misrouteShutdown() {
+	if (!misrouteHelper) return;
+	misrouteHelper.retired = true;
+	clearTimeout(misrouteHelper.timer);
+	if (misrouteHelper.child) { try { misrouteHelper.child.kill(); } catch {} }
+	misrouteHelper = null;
+}
+
 // ---- audio mute/solo (Session 8 Part B) ------------------------------------
 // Live operator actions, NOT desired state (SESSION8-SPEC §2): intent lives here
 // in console memory (like the preview toggles), truth lives in the worker and is
@@ -273,6 +373,11 @@ ipcMain.handle('state', () => {
 		},
 		audioMix: { solo: soloPlayer, muted: [...muteIntent] },
 		popouts: [...popouts.keys()],
+		misroute: {
+			players: Object.fromEntries(misrouteState),
+			// stale scan = helper down; flags shown are last-known, not live
+			fresh: !!(misrouteScan && Date.now() - misrouteScan.at < 15000),
+		},
 	};
 });
 
@@ -386,11 +491,13 @@ app.whenReady().then(() => {
 	previews.init();
 	previewSync();
 	meterSync();
+	misrouteHelper = { child: null, backoffIdx: 0, timer: null, retired: false };
+	spawnMisrouteHelper(misrouteHelper);
 	// Reconcile receivers + meter helpers to config + toggles: picks up
 	// sources.json edits (add/remove/endpoint change) without renderer involvement.
 	// muteSync re-asserts mute/solo intent on workers that restarted unmuted.
 	setInterval(() => { previewSync(); meterSync(); muteSync(false); popoutSync(); }, 2000);
 });
 
-app.on('before-quit', () => { previews.shutdown(); metersShutdown(); });
+app.on('before-quit', () => { previews.shutdown(); metersShutdown(); misrouteShutdown(); });
 app.on('window-all-closed', () => app.quit()); // workers live on — file-coupled only
