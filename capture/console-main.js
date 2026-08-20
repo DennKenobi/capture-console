@@ -40,6 +40,22 @@ let pidPath = path.join(configDir, 'supervisor.pid');
 let cmdPath = path.join(configDir, 'supervisor.cmd');
 let statusPath = path.join(configDir, 'supervisor-status.json');
 
+// Launcher path (Session 10): a missing scene file becomes a fresh empty scene
+// (valid since Session 9) instead of an error page — double-clicking the
+// launcher on a clean machine must land in a working console.
+try {
+	fs.mkdirSync(configDir, { recursive: true });
+	if (!fs.existsSync(configPath)) {
+		fs.writeFileSync(configPath, JSON.stringify({ defaults: {}, sources: [] }, null, 2) + '\n');
+		console.log(`[scene] created empty scene ${configPath}`);
+	}
+} catch (err) { console.error(`[scene] could not create ${configPath}: ${err.message}`); }
+
+// App icon (Session 10): Dennis's Just-Create-Studios-derived icon, once it
+// lands at assets/ecandi.ico, is picked up here — absent file, stock icon.
+const ICON_PATH = path.join(__dirname, '..', 'assets', 'ecandi.ico');
+const APP_ICON = fs.existsSync(ICON_PATH) ? ICON_PATH : undefined;
+
 function supervisorPid() {
 	try {
 		const pid = parseInt(fs.readFileSync(pidPath, 'utf8').trim(), 10);
@@ -103,6 +119,7 @@ function popoutToggle(player) {
 		useContentSize: true,
 		frame: false,
 		title: `${player} — preview`,
+		icon: APP_ICON,
 		backgroundColor: '#10161a',
 		webPreferences: {
 			preload: path.join(__dirname, 'console-preload.js'),
@@ -666,6 +683,7 @@ app.whenReady().then(() => {
 		width: 1280,
 		height: 860,
 		title: 'ECANDI',
+		icon: APP_ICON,
 		webPreferences: {
 			preload: path.join(__dirname, 'console-preload.js'),
 			contextIsolation: true,
