@@ -56,6 +56,14 @@ const NDI_DEPTH = NDI_DEPTH_RAW ? parseInt(NDI_DEPTH_RAW, 10) : (SENDER_MODE ===
 // Consecutive sendTexture open/copy failures before a surface falls back to the
 // CPU bitmap path (same native sender, so no NDI name churn).
 const TEX_FAIL_LIMIT = 30;
+// Session 10 Part C: stats cadence knob (defaults.video.statsSec → --stats-sec)
+// plus a dedicated faster tally poll (defaults.video.tallySec → --tally-sec) so
+// the PGM highlight can be snappier than the stats tick. Poll-based, never
+// per-frame (§0 Session 8); the dedicated poll emits ONLY on change, so a fast
+// cadence costs no log or status-file flood.
+const STATS_SEC = Math.min(120, Math.max(2, parseInt(arg('stats-sec', '10'), 10) || 10));
+const TALLY_SEC_RAW = parseInt(arg('tally-sec', ''), 10);
+const TALLY_SEC = Number.isFinite(TALLY_SEC_RAW) ? Math.min(120, Math.max(1, TALLY_SEC_RAW)) : 0;
 
 if (!CONFIG_PATH) { console.error('[vhost] --config=<path> is required'); app.exit(2); }
 
@@ -553,7 +561,31 @@ app.whenReady().then(async () => {
 				tally ? { tally } : {},
 				SENDER_MODE === 'native' ? { frameMode: s.frameMode, mapMs: st.mapMs || 0, openFails: st.openFails || 0 } : {}));
 		}
-	}, 10000);
+	}, STATS_SEC * 1000);
+
+	// Dedicated tally poll (only when faster than the stats tick): emit a
+	// tally-only stats event the moment downstream program/preview changes —
+	// the merge into playerStats keeps every other stat field intact, and the
+	// regular stats tick keeps repeating the current value on its own cadence.
+	if (TALLY_SEC && TALLY_SEC < STATS_SEC) {
+		console.log(`[vhost] dedicated tally poll every ${TALLY_SEC}s (stats every ${STATS_SEC}s)`);
+		setInterval(() => {
+			for (const [, s] of surfaces) {
+				if (s.state !== 'running' && s.state !== 'starting') continue;
+				let tally = null;
+				try {
+					const t = s.sender && s.sender.tally ? s.sender.tally() : null;
+					if (t) tally = { program: !!t.on_program, preview: !!t.on_preview };
+				} catch { /* tally is decoration — never let it break the poll */ }
+				if (!tally) continue;
+				const key = `${tally.program}|${tally.preview}`;
+				if (s.tallyKey === key) continue;
+				s.tallyKey = key;
+				console.log(`[vhost] ${s.name} tally -> ${tally.program ? 'PGM' : tally.preview ? 'PVW' : '-'}`);
+				emit('stats', s.name, { tally });
+			}
+		}, TALLY_SEC * 1000);
+	}
 
 	function handleCommand(line) {
 		const [cmd, player] = line.trim().split(/\s+/);

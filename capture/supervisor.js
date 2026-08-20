@@ -48,7 +48,38 @@ const HEALTHY_RESET_MS = 120000;
 const configDir = path.dirname(path.resolve(CONFIG_PATH));
 const dataRoot = path.join(configDir, '.workers');
 const logPath = argOf('log', path.join(configDir, 'supervisor.log'));
-const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+
+// ---- supervisor.log rotation (Session 10 Part C) ---------------------------
+// Size-based, one archived generation (supervisor.log.1) — the log appends
+// across every run and grew unbounded (Session 7 carry-item). Rotation swaps
+// streams asynchronously (Windows cannot rename a file with an open handle);
+// lines arriving mid-swap queue briefly and rotation failures only ever cost
+// the rotation, never the supervisor.
+const LOG_MAX_BYTES = 5 * 1024 * 1024;
+let logStream = null, logBytes = 0, logQueue = null;
+function openLogStream() {
+	try { logBytes = fs.statSync(logPath).size; } catch { logBytes = 0; }
+	logStream = fs.createWriteStream(logPath, { flags: 'a' });
+}
+function logWrite(text) {
+	if (logQueue) { logQueue.push(text); return; }
+	logStream.write(text);
+	logBytes += Buffer.byteLength(text);
+	if (logBytes <= LOG_MAX_BYTES) return;
+	logQueue = [];
+	logStream.end(() => {
+		try {
+			fs.rmSync(logPath + '.1', { force: true });
+			fs.renameSync(logPath, logPath + '.1');
+		} catch { /* rotation must never kill the supervisor */ }
+		openLogStream();
+		logStream.write(`${ts()} [sup] log rotated at ${LOG_MAX_BYTES >> 20} MB (previous generation in ${path.basename(logPath)}.1)\n`);
+		const q = logQueue;
+		logQueue = null;
+		for (const t of q) logWrite(t);
+	});
+}
+openLogStream();
 
 // The console spawns us detached and may die/restart at will; our stdout pipe can
 // break mid-write. Never let EPIPE kill the workers' supervisor.
@@ -76,7 +107,7 @@ function pidFileAlive() {
 function ts() { return new Date().toISOString().slice(11, 23); }
 function log(line, consoleToo = true) {
 	const msg = `${ts()} ${line}`;
-	logStream.write(msg + '\n');
+	logWrite(msg + '\n');
 	if (consoleToo) console.log(msg);
 }
 function emitSup(ev, extra) {
@@ -117,6 +148,13 @@ function workerSpecs() {
 		if (ONLY_SOURCE) args.push(`--source=${ONLY_SOURCE}`);
 		if (config.defaults && config.defaults.video && config.defaults.video.ndiDepth) {
 			args.push(`--ndi-depth=${config.defaults.video.ndiDepth}`);
+		}
+		// Session 10: stats cadence + snappier tally poll (see video-host.js)
+		if (config.defaults && config.defaults.video && config.defaults.video.statsSec) {
+			args.push(`--stats-sec=${config.defaults.video.statsSec}`);
+		}
+		if (config.defaults && config.defaults.video && config.defaults.video.tallySec) {
+			args.push(`--tally-sec=${config.defaults.video.tallySec}`);
 		}
 		// Session 6: 'native' (video-host default — shared-texture readback module,
 		// falls back to inline in-host if the binary won't load) | 'inline' |
@@ -187,7 +225,7 @@ function spawnWorker(w) {
 
 	const onLine = line => {
 		if (!line.trim()) return;
-		logStream.write(`${ts()} [${w.spec.key}] ${line}\n`);
+		logWrite(`${ts()} [${w.spec.key}] ${line}\n`);
 		if (line.startsWith('{')) {
 			try {
 				const ev = JSON.parse(line);
@@ -196,7 +234,7 @@ function spawnWorker(w) {
 		}
 	};
 	readline.createInterface({ input: child.stdout }).on('line', onLine);
-	readline.createInterface({ input: child.stderr }).on('line', l => logStream.write(`${ts()} [${w.spec.key}!] ${l}\n`));
+	readline.createInterface({ input: child.stderr }).on('line', l => logWrite(`${ts()} [${w.spec.key}!] ${l}\n`));
 
 	child.on('exit', (code, signal) => handleWorkerExit(w, code, signal));
 

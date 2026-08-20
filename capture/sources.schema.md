@@ -13,7 +13,9 @@ surface** — edits here take effect only via per-plane rebuild.
     "videoTopology": "consolidated",  // "consolidated" (one video-host process, default; Session 5 bench) | "per-player" (one slice-main process per player)
     "video": { "width": 1920, "height": 1080, "fps": 30,
                "ndiDepth": 8,         // optional: NDI send-pipeline depth for the consolidated host (inline default 8, native default 2; per-player workers use 2)
-               "senderMode": "native" }, // optional: "native" (default since Session 6 — shared-texture module, off-main frame path, ~half the host CPU; auto-falls-back to inline if the binary won't load) | "inline" (grandiose on the host main loop) | "proc" (rejected, kept for re-testing)
+               "senderMode": "native", // optional: "native" (default since Session 6 — shared-texture module, off-main frame path, ~half the host CPU; auto-falls-back to inline if the binary won't load) | "inline" (grandiose on the host main loop) | "proc" (rejected, kept for re-testing)
+               "statsSec": 10,        // optional (Session 10): consolidated-host stats-tick interval, 2-120 s
+               "tallySec": 2 },       // optional (Session 10): dedicated tally poll when < statsSec — PGM/PVW changes emit immediately (change-driven, no flood); console tint latency ≈ tallySec + ~4 s of status/console ticks
     "audio": { "audioOutputDevice": "VBMatrix In 6" }  // label fragment unique to ONE endpoint — see below
   },
   "sources": [
