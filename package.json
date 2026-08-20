@@ -54,7 +54,7 @@
   },
   "build": {
     "appId": "capture.electron",
-    "productName": "elecap",
+    "productName": "ECANDI",
     "electronVersion": "39.8.10-qp20",
     "npmRebuild": false,
     "asarUnpack": [

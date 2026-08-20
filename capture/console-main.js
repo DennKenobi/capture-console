@@ -475,7 +475,7 @@ app.whenReady().then(() => {
 	const win = new BrowserWindow({
 		width: 1280,
 		height: 860,
-		title: 'Capture Console',
+		title: 'ECANDI',
 		webPreferences: {
 			preload: path.join(__dirname, 'console-preload.js'),
 			contextIsolation: true,
