@@ -74,8 +74,11 @@ function audioUrl(source, defaults) {
 
 function validateConfig(config) {
 	const errors = [];
-	if (!config || !Array.isArray(config.sources) || config.sources.length === 0) {
-		errors.push('config.sources must be a non-empty array');
+	// An EMPTY sources array is valid (Session 9, operator feedback): a fresh scene
+	// starts with no players; the supervisor just runs an empty video host until
+	// players are added and rescanned in.
+	if (!config || !Array.isArray(config.sources)) {
+		errors.push('config.sources must be an array');
 		return errors;
 	}
 	const names = new Set(), ndiNames = new Set(), offsets = new Map();

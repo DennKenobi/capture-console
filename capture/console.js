@@ -404,6 +404,33 @@ async function tick() {
 
 // ---- editor ---------------------------------------------------------------
 
+// Device dropdown (Session 9): real render endpoints with channel counts, so the
+// operator can SEE which endpoint is the 8-channel one instead of guessing what a
+// free-text field expects. Values are full endpoint labels — vdo.ninja matches by
+// normalized label substring, so a full label always matches its own endpoint.
+async function populateDeviceSelect(current) {
+	const sel = $('f_adev');
+	const defs = (lastState && lastState.config && lastState.config.defaults) || {};
+	const defDev = (defs.audio && defs.audio.audioOutputDevice) || '';
+	sel.innerHTML = `<option value="">${defDev ? `(default: ${defDev})` : '(config has no default device)'}</option>`;
+	if (current) { // keep the configured value selectable before enumeration lands
+		sel.innerHTML += `<option value="${current.replace(/"/g, '&quot;')}">${current} (configured)</option>`;
+		sel.value = current;
+	}
+	const res = await window.cc.audioDevices();
+	if (res.error) { setMsg(`device list unavailable: ${res.error}`); return; }
+	const opts = [{ v: '', t: defDev ? `(default: ${defDev})` : '(config has no default device)' }];
+	let seen = false;
+	for (const d of res.devices) {
+		if (d.label === current) seen = true;
+		const mark = d.label === res.default ? ' — system default' : '';
+		opts.push({ v: d.label, t: `${d.label} — ${d.channels} ch${mark}` });
+	}
+	if (current && !seen) opts.push({ v: current, t: `${current} (configured, not currently present)` });
+	sel.innerHTML = opts.map(o => `<option value="${o.v.replace(/"/g, '&quot;')}">${o.t}</option>`).join('');
+	sel.value = current || '';
+}
+
 function openEditor(name) {
 	editing = name;
 	$('edTitle').textContent = name ? `Edit player: ${name}` : 'Add player';
@@ -419,7 +446,7 @@ function openEditor(name) {
 	$('f_height').value = v.height !== undefined ? v.height : '';
 	$('f_fps').value = v.fps !== undefined ? v.fps : '';
 	$('f_vextra').value = v.extraParams || '';
-	$('f_adev').value = a.audioOutputDevice || '';
+	populateDeviceSelect(a.audioOutputDevice || '');
 	$('f_choff').value = a.channelOffset !== undefined ? a.channelOffset : '';
 	$('f_channels').value = a.channels !== undefined ? a.channels : '';
 	$('f_aextra').value = a.extraParams || '';
@@ -578,7 +605,7 @@ $('btnRescan').addEventListener('click', async () => {
 $('btnAdd').addEventListener('click', () => openEditor(''));
 $('btnSave').addEventListener('click', saveEditor);
 $('btnCancel').addEventListener('click', () => { $('editor').hidden = true; editing = null; });
-for (const el of document.querySelectorAll('#editor input')) el.addEventListener('input', previewUrls);
+for (const el of document.querySelectorAll('#editor input, #editor select')) el.addEventListener('input', previewUrls);
 
 tick();
 setInterval(tick, 2000);

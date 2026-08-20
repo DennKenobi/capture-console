@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('cc', {
 	audioMute: (player, on) => ipcRenderer.invoke('audio-mute', player, on),
 	audioSolo: player => ipcRenderer.invoke('audio-solo', player),
 	popoutToggle: player => ipcRenderer.invoke('popout-toggle', player),
+	audioDevices: () => ipcRenderer.invoke('audio-devices'),
 	onPreviewFrame: cb => ipcRenderer.on('preview-frame', (e, frame) => cb(frame)),
 	onMeterUpdate: cb => ipcRenderer.on('meter-update', (e, update) => cb(update)),
 });

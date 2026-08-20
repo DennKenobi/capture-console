@@ -278,6 +278,25 @@ ipcMain.handle('state', () => {
 
 ipcMain.handle('popout-toggle', (e, player) => ({ ok: true, open: popoutToggle(player) }));
 
+// Render-endpoint list for the editor's device dropdown (Session 9): one-shot
+// PowerShell enumeration with channel counts (the operator's real question is
+// "which endpoint has 8 channels"), cached briefly — devices rarely change mid-edit.
+let endpointCache = { at: 0, data: null };
+ipcMain.handle('audio-devices', async () => {
+	if (endpointCache.data && Date.now() - endpointCache.at < 10000) return endpointCache.data;
+	const data = await new Promise(resolve => {
+		require('child_process').execFile('powershell.exe', [
+			'-NoProfile', '-ExecutionPolicy', 'Bypass',
+			'-File', path.join(__dirname, 'list-endpoints.ps1'),
+		], { timeout: 20000, windowsHide: true }, (err, stdout) => {
+			if (err) return resolve({ error: String(err.message || err), default: '', devices: [] });
+			try { resolve(JSON.parse(stdout)); } catch { resolve({ error: 'enumeration output unparsable', default: '', devices: [] }); }
+		});
+	});
+	endpointCache = { at: Date.now(), data };
+	return data;
+});
+
 ipcMain.handle('audio-mute', (e, player, on) => {
 	if (on) muteIntent.add(player); else muteIntent.delete(player);
 	muteSync(true);
