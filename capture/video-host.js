@@ -311,9 +311,20 @@ async function startSurface(s) {
 			emit('ready', s.name, { ndiName: s.ndiName });
 		}
 	} else if (!s.sender) {
-		s.sender = SENDER_MODE === 'native'
-			? await ndiNative.create(s.ndiName, { fps: s.video.fps, depth: NDI_DEPTH })
-			: await ndi.create(s.ndiName, { fps: s.video.fps, depth: NDI_DEPTH });
+		// Adopt a parked sender holding this exact NDI name (delete + re-add flow):
+		// creating a duplicate would retry forever against our own parked name.
+		// Reuse is the sanctioned pattern (reloads reuse windows the same way).
+		// The adopted sender keeps its original fps metadata — cadence is
+		// paint-driven anyway, the frame_rate field is advisory.
+		const parked = parkedSenders.findIndex(p => p.ndiName === s.ndiName);
+		if (parked >= 0) {
+			s.sender = parkedSenders.splice(parked, 1)[0].sender;
+			console.log(`[vhost] ${s.name} adopted parked sender "${s.ndiName}"`);
+		} else {
+			s.sender = SENDER_MODE === 'native'
+				? await ndiNative.create(s.ndiName, { fps: s.video.fps, depth: NDI_DEPTH })
+				: await ndi.create(s.ndiName, { fps: s.video.fps, depth: NDI_DEPTH });
+		}
 		emit('ready', s.name, { ndiName: s.ndiName });
 	}
 	// Reuse an existing window whenever possible — see the parkWindow note.
@@ -357,7 +368,11 @@ function readConfigFile() {
 // last log line printed, then no tick ever ran again). Senders are therefore only
 // ever destroyed at process shutdown (external watchdog covers a hang there);
 // until then a removed player's name stays advertised with its last frame.
-const parkedSenders = [];
+// Parked entries carry their ndiName so a later add can ADOPT the sender instead
+// of fighting it: without adoption, delete + re-add of a player whose NDI name is
+// unchanged deadlocks the new surface's create ladder against the parked sender's
+// name — hit by the first real operator within hours (Session 9).
+const parkedSenders = []; // [{ ndiName, sender }]
 
 async function retireSurface(s) {
 	s.retired = true;
@@ -366,8 +381,8 @@ async function retireSurface(s) {
 		if (uProc && s.senderReady) uProc.postMessage({ type: 'destroy', player: s.name });
 		s.senderReady = false;
 	} else if (s.sender) {
-		parkedSenders.push(s.sender);
-		console.log(`[vhost] ${s.name} sender parked (name frees on host restart)`);
+		parkedSenders.push({ ndiName: s.ndiName, sender: s.sender });
+		console.log(`[vhost] ${s.name} sender parked (adoptable by ndiName "${s.ndiName}"; frees on host restart)`);
 		s.sender = null;
 	}
 	surfaces.delete(s.name);
@@ -413,8 +428,8 @@ async function reloadSurface(s) {
 					s.senderReady = false;
 				} else if (s.sender) {
 					// never destroy in a live host — see parkedSenders note
-					parkedSenders.push(s.sender);
-					console.log(`[vhost] ${s.name} old sender parked (name frees on host restart)`);
+					parkedSenders.push({ ndiName: s.ndiName, sender: s.sender });
+					console.log(`[vhost] ${s.name} old sender parked (adoptable by ndiName "${s.ndiName}"; frees on host restart)`);
 					s.sender = null;
 				}
 			}

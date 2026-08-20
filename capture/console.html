@@ -63,7 +63,11 @@
   .amdevname { font-size: 12px; color: #33515e; margin-bottom: 4px; }
   .amtbl { width: auto; }
   .amtbl td { padding: 3px 8px; }
-  .amch { color: #5c7080; }
+  .amch { color: #5c7080; white-space: nowrap; }
+  /* channel numbers are 1-based, config offsets are 0-based — show both so the
+     operator never has to do the off-by-one in their head (Session 9 feedback) */
+  .amoff { color: #98a8b0; font-size: 10px; }
+  .st.rebuilding { color: #b58105; } .st.parked { color: #5c7080; }
   .ammeter .meter { width: 90px; }
   .amcell { min-width: 130px; cursor: pointer; }
   .amcell:hover { background: #eef4f7; }

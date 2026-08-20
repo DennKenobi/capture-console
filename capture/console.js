@@ -20,13 +20,19 @@ function fmtStats(st) {
 	return bits.join(' · ');
 }
 
+// Consolidated video: the worker row is the HOST process, but the operator reads
+// the cell as THIS PLAYER's state — map the surface's last event onto the label
+// (Session 9: "running" next to "(stopped)" read as a bug, and fairly so).
+const EV_STATE = { stopped: 'stopped', 'window-failed': 'failed', 'window-gone': 'rebuilding', exiting: 'parked', ready: 'starting', loaded: 'running' };
+
 function planeCell(worker, playerStats, supUp) {
 	// distinguish "supervisor down" from "supervisor up but this worker isn't in
 	// its table" (Session 9: the old blanket label misread as a system failure)
 	if (!worker) return supUp
 		? '<span class="st unknown">no worker — rescan to start</span>'
 		: '<span class="st unknown">no supervisor</span>';
-	const st = worker.state || 'unknown';
+	let st = worker.state || 'unknown';
+	if (st === 'running' && playerStats && EV_STATE[playerStats.lastEv]) st = EV_STATE[playerStats.lastEv];
 	let html = `<span class="st ${st}">${st}</span>`;
 	// worker-reported truth (Session 8): the meter dying alongside this chip is the proof
 	if (worker.muted) html += ' <span class="mutedchip">MUTED</span>';
@@ -39,7 +45,8 @@ function planeCell(worker, playerStats, supUp) {
 	if (tly && tly.program) html += ' <span class="tallychip pgm">PGM</span>';
 	else if (tly && tly.preview) html += ' <span class="tallychip pvw">PVW</span>';
 	if (stats) html += `<br><span class="mono">${fmtStats(stats)}</span>`;
-	if (playerStats && playerStats.lastEv && playerStats.lastEv !== 'loaded') {
+	// parenthetical only for events the state label doesn't already say
+	if (playerStats && playerStats.lastEv && !EV_STATE[playerStats.lastEv]) {
 		html += `<br><span class="mono">(${playerStats.lastEv})</span>`;
 	}
 	return html;
@@ -222,7 +229,7 @@ function renderGrid() {
 			for (let ch = 0; ch < 8; ch++) {
 				const p = slots[ch];
 				html += `<tr>
-					<td class="mono amch">ch${ch + 1}</td>
+					<td class="mono amch">ch${ch + 1} <span class="amoff">off ${ch}</span></td>
 					<td class="ammeter"><div class="meter"><div class="meterfill" id="amfill-${d}-${ch}"></div></div></td>
 					<td class="amcell" data-amch="${ch}" data-amdev="${dev}">${p ? amChip(p) : '<span class="amempty">—</span>'}</td>
 				</tr>`;
