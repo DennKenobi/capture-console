@@ -316,9 +316,10 @@ async function amConnect() {
 
 function render(state) {
 	lastState = state;
-	// scene identity lives in the title bar (Session 10 Part A)
+	// scene identity lives in the title bar + bar label (Session 10 Part A/B)
 	document.title = `ECANDI — ${state.sceneName || 'no scene'}`;
-	$('cfgPath').textContent = state.configPath;
+	$('sceneName').textContent = state.sceneName || '';
+	$('sceneName').title = state.configPath || '';
 	const up = !!(state.supervisorPid && state.status);
 	$('supPill').textContent = up
 		? `supervisor: running pid ${state.supervisorPid} (${state.status.videoTopology})`
@@ -644,6 +645,18 @@ $('btnPrevAll').addEventListener('click', async () => {
 	await window.cc.previewToggle('global', on);
 	tick();
 });
+
+// Theme (Session 10 Part B): dark is the default (broadcast rooms are dark);
+// the toggle persists per console profile so Dennis's pick sticks.
+function applyTheme(mode) {
+	document.body.classList.toggle('dark', mode !== 'light');
+	$('btnTheme').textContent = mode === 'light' ? 'Theme: light' : 'Theme: dark';
+	try { localStorage.setItem('ecandi-theme', mode); } catch {}
+}
+$('btnTheme').addEventListener('click', () => {
+	applyTheme(document.body.classList.contains('dark') ? 'light' : 'dark');
+});
+applyTheme((() => { try { return localStorage.getItem('ecandi-theme') || 'dark'; } catch { return 'dark'; } })());
 
 window.cc.onPreviewFrame(paintPreview);
 window.cc.onMeterUpdate(update => {

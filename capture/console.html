@@ -4,101 +4,176 @@
 <meta charset="utf-8">
 <title>ECANDI</title>
 <style>
-  /* Operator console: function over form (SESSION5-SPEC Part C). */
-  body { font: 13px/1.45 system-ui, sans-serif; margin: 12px; color: #182026; background: #f5f7f8; }
-  h1 { font-size: 16px; margin: 0 0 8px; }
-  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
-  .bar .path { color: #5c7080; font-size: 12px; }
-  .pill { padding: 2px 8px; border-radius: 10px; font-weight: 600; font-size: 12px; }
-  .pill.up { background: #d4f7dc; color: #1d7a34; }
-  .pill.down { background: #fde3e3; color: #a82a2a; }
-  button { font: inherit; padding: 3px 10px; cursor: pointer; }
-  table { border-collapse: collapse; width: 100%; background: #fff; }
-  th, td { border: 1px solid #d3dce0; padding: 5px 8px; text-align: left; vertical-align: top; }
-  th { background: #e8eef1; font-size: 12px; }
+  /* Operator console — Session 10 Part B polish. Function-first: state at a
+     glance across 8 rows, consistent chip/badge/button language, dense but
+     readable. Two themes on CSS variables; dark is default (broadcast rooms
+     are dark), toggle in the bar, choice persisted. Vanilla CSS by design. */
+  :root {
+    --bg: #f5f7f8; --panel: #fff; --panel2: #eef2f4;
+    --border: #cdd8dd; --border-soft: #e2e9ec;
+    --text: #182026; --muted: #5c7080; --faint: #98a8b0;
+    --accent: #1a6fb5; --accent-bg: #d6ebff;
+    --ok: #1d7a34; --ok-bg: #d9f2e0;
+    --warn: #8a6100; --warn-bg: #ffedc2;
+    --bad: #a82a2a; --bad-bg: #fde3e3;
+    --pgm: #d33a2f; --pgm-bg: #fdeceb;
+    --pvw: #2e9e57; --pvw-bg: #eefaf2;
+    --meter-bg: #dde5e9; --meter-fill: #8aa5b3; --meter-hot: #2fa04f;
+    --btn-bg: #fbfdfe; --btn-border: #b8c4ca; --btn-hover: #eef4f7;
+    --canvas-bg: #10161a;
+  }
+  body.dark {
+    --bg: #14181b; --panel: #1b2125; --panel2: #171d20;
+    --border: #313d44; --border-soft: #262f35;
+    --text: #d7e0e5; --muted: #8fa1ab; --faint: #5c6b73;
+    --accent: #4da3e0; --accent-bg: #16405c;
+    --ok: #4cc272; --ok-bg: #123521;
+    --warn: #e3af45; --warn-bg: #3a2d10;
+    --bad: #e35d5d; --bad-bg: #421717;
+    --pgm: #e04338; --pgm-bg: #3a1512;
+    --pvw: #46c06a; --pvw-bg: #12321c;
+    --meter-bg: #232c31; --meter-fill: #48606f; --meter-hot: #2fa04f;
+    --btn-bg: #222b30; --btn-border: #3a464d; --btn-hover: #2b363c;
+  }
+  body { font: 13px/1.4 system-ui, sans-serif; margin: 10px 12px; color: var(--text); background: var(--bg); }
+
+  /* ---- top bar: brand · scene · grouped controls --------------------------- */
+  .bar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .brand { font-size: 15px; font-weight: 800; letter-spacing: 1px; margin-right: 2px; }
+  .scene { color: var(--muted); font-size: 12px; margin-right: 6px; }
+  .grp { display: inline-flex; gap: 4px; align-items: center; padding-right: 8px; margin-right: 2px;
+         border-right: 1px solid var(--border-soft); }
+  .grp:last-child { border-right: 0; }
+  .pill { padding: 2px 9px; border-radius: 10px; font-weight: 600; font-size: 12px; }
+  .pill.up { background: var(--ok-bg); color: var(--ok); }
+  .pill.down { background: var(--bad-bg); color: var(--bad); }
+
+  button { font: inherit; font-size: 12px; padding: 3px 9px; cursor: pointer; border-radius: 4px;
+           background: var(--btn-bg); color: var(--text); border: 1px solid var(--btn-border); }
+  button:hover:not(:disabled) { background: var(--btn-hover); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.active { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+  #btnStart { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  #btnStopAll, button[data-remove] { border-color: var(--bad); color: var(--bad); }
+
+  /* ---- players table ------------------------------------------------------- */
+  table { border-collapse: collapse; width: 100%; background: var(--panel); }
+  th, td { border: 1px solid var(--border-soft); padding: 4px 8px; text-align: left; vertical-align: top; }
+  th { background: var(--panel2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px;
+       color: var(--muted); }
   td.mono, .mono { font-family: Consolas, monospace; font-size: 12px; }
-  .st { font-weight: 700; }
-  .st.running { color: #1d7a34; } .st.starting, .st.backoff { color: #b58105; }
-  .st.failed { color: #a82a2a; } .st.stopped, .st.idle, .st.unknown { color: #5c7080; }
+  td .mono { color: var(--muted); }
+  #rows td:first-child { font-size: 14px; }
+
+  /* state chips: one visual language for worker/surface state everywhere */
+  .st { display: inline-block; padding: 0 6px; border-radius: 3px; font-weight: 700; font-size: 11px;
+        text-transform: uppercase; letter-spacing: 0.3px;
+        background: var(--panel2); color: var(--muted); }
+  .st.running { background: var(--ok-bg); color: var(--ok); }
+  .st.starting, .st.backoff, .st.rebuilding { background: var(--warn-bg); color: var(--warn); }
+  .st.failed { background: var(--bad); color: #fff; }
+  .st.stopped, .st.idle, .st.unknown, .st.parked { background: var(--panel2); color: var(--muted); }
+
   .planebtns { white-space: nowrap; }
-  #editor { background: #fff; border: 1px solid #b8c4ca; padding: 12px; margin-top: 12px; max-width: 980px; }
-  #editor h2 { font-size: 14px; margin: 0 0 8px; }
-  #editor .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 12px; }
-  #editor label { display: block; font-size: 11px; color: #5c7080; }
-  #editor input, #editor select { width: 100%; box-sizing: border-box; font: inherit; padding: 2px 4px; }
-  #editor .pasterow { margin-bottom: 8px; }
-  #editor .pasterow input { font-family: Consolas, monospace; font-size: 12px; }
-  #editor .urls { margin-top: 8px; font-family: Consolas, monospace; font-size: 11px; word-break: break-all; color: #33515e; }
-  #editor .urls b { color: #182026; }
-  #msg { color: #a82a2a; margin: 6px 0; white-space: pre-wrap; }
-  details { margin-top: 12px; } pre { font-size: 11px; background: #fff; padding: 8px; overflow: auto; }
-  /* Session 7: in-row previews + meters */
+  .planebtns button { padding: 2px 7px; }
+
+  /* chips: worker-truth (muted), alarm (misroute), tally */
+  .mutedchip { background: var(--bad-bg); color: var(--bad); font-size: 10px; font-weight: 700;
+               padding: 1px 4px; border-radius: 3px; }
+  .misroutechip { background: var(--bad); color: #fff; font-size: 10px; font-weight: 700;
+                  padding: 1px 5px; border-radius: 3px; }
+  .tallychip { font-size: 10px; font-weight: 700; padding: 1px 4px; border-radius: 3px; }
+  .tallychip.pgm { background: var(--pgm); color: #fff; }
+  .tallychip.pvw { background: var(--pvw-bg); color: var(--pvw); }
+  tr.pgm td { background: var(--pgm-bg); }
+  tr.pgm td:first-child { box-shadow: inset 4px 0 0 var(--pgm); }
+  tr.pvw td { background: var(--pvw-bg); }
+  tr.pvw td:first-child { box-shadow: inset 4px 0 0 var(--pvw); }
+
+  /* previews + meters */
   .prevrow { display: flex; gap: 8px; align-items: flex-start; }
   .prevwrap { position: relative; flex: none; }
-  .prevwrap canvas { display: block; width: 160px; height: 90px; background: #10161a; border: 1px solid #b8c4ca; }
+  .prevwrap canvas { display: block; width: 160px; height: 90px; background: var(--canvas-bg);
+                     border: 1px solid var(--border); }
   .prevwrap canvas.stale { opacity: 0.45; }
   .prevwrap canvas.off { opacity: 0.15; }
   .pbadge { position: absolute; left: 3px; bottom: 3px; background: rgba(20,24,28,.82); color: #ffce56;
             font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; }
   .meterwrap { display: flex; gap: 6px; align-items: center; margin-bottom: 3px; }
-  .meter { width: 120px; height: 10px; background: #dde5e9; border: 1px solid #b8c4ca; }
+  .meter { width: 120px; height: 10px; background: var(--meter-bg); border: 1px solid var(--border); }
   .meter.dead { opacity: 0.35; }
-  .meterfill { height: 100%; width: 0%; background: #8aa5b3; transition: width 120ms linear; }
-  .meterfill.hot { background: #2fa04f; }
-  .mch { font-size: 11px; color: #5c7080; }
-  /* Session 8: mute/solo — buttons show operator intent, chip shows worker truth */
-  .mutedchip { background: #fde3e3; color: #a82a2a; font-size: 10px; font-weight: 700;
-               padding: 1px 4px; border-radius: 3px; }
-  /* Session 10: misroute detector — audio actively on the wrong endpoint */
-  .misroutechip { background: #a82a2a; color: #fff; font-size: 10px; font-weight: 700;
-                  padding: 1px 5px; border-radius: 3px; }
-  button.active { background: #ffd77a; border-color: #b58105; }
-  /* Session 8 Part C: tally — program strong, preview subtle */
-  .tallychip { font-size: 10px; font-weight: 700; padding: 1px 4px; border-radius: 3px; }
-  .tallychip.pgm { background: #d33a2f; color: #fff; }
-  .tallychip.pvw { background: #d4f7dc; color: #1d7a34; }
-  tr.pgm td { background: #fdeceb; }
-  tr.pgm td:first-child { box-shadow: inset 4px 0 0 #d33a2f; }
-  tr.pvw td { background: #f0faf3; }
-  tr.pvw td:first-child { box-shadow: inset 4px 0 0 #7bc98f; }
-  /* Session 8 Part A: Audio Manager grid */
+  .meterfill { height: 100%; width: 0%; background: var(--meter-fill); transition: width 120ms linear; }
+  .meterfill.hot { background: var(--meter-hot); }
+  .mch { font-size: 11px; color: var(--muted); }
+
+  /* ---- sections ------------------------------------------------------------ */
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted);
+       margin: 16px 0 6px; }
+  #msg { color: var(--bad); margin: 6px 0; white-space: pre-wrap; min-height: 1em; }
+  details { margin-top: 12px; color: var(--muted); }
+  pre { font-size: 11px; background: var(--panel); color: var(--text); padding: 8px; overflow: auto;
+        border: 1px solid var(--border-soft); }
+
+  /* editor */
+  #editor { background: var(--panel); border: 1px solid var(--border); padding: 12px; margin-top: 12px;
+            max-width: 980px; }
+  #editor h2 { margin: 0 0 8px; }
+  #editor .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 12px; }
+  #editor label { display: block; font-size: 11px; color: var(--muted); }
+  #editor input, #editor select { width: 100%; box-sizing: border-box; font: inherit; padding: 2px 4px;
+            background: var(--btn-bg); color: var(--text); border: 1px solid var(--btn-border); }
+  #editor .pasterow { margin-bottom: 8px; }
+  #editor .pasterow input { font-family: Consolas, monospace; font-size: 12px; }
+  #editor .urls { margin-top: 8px; font-family: Consolas, monospace; font-size: 11px; word-break: break-all;
+                  color: var(--muted); }
+  #editor .urls b { color: var(--text); }
+  .hint { color: var(--muted); font-size: 12px; }
+
+  /* ---- Audio Manager: aligned with the player rows ------------------------- */
   .amdev { display: inline-block; vertical-align: top; margin-right: 16px; }
-  .amdevname { font-size: 12px; color: #33515e; margin-bottom: 4px; }
+  .amdevname { font-family: Consolas, monospace; font-size: 11px; text-transform: none;
+               color: var(--muted); margin-bottom: 3px; }
   .amtbl { width: auto; }
-  .amtbl td { padding: 3px 8px; }
-  .amch { color: #5c7080; white-space: nowrap; }
+  .amtbl td { padding: 2px 8px; }
+  .amch { color: var(--muted); white-space: nowrap; }
   /* channel numbers are 1-based, config offsets are 0-based — show both so the
      operator never has to do the off-by-one in their head (Session 9 feedback) */
-  .amoff { color: #98a8b0; font-size: 10px; }
-  .st.rebuilding { color: #b58105; } .st.parked { color: #5c7080; }
-  .ammeter .meter { width: 90px; }
+  .amoff { color: var(--faint); font-size: 10px; }
+  .ammeter .meter { width: 120px; }
   .amcell { min-width: 130px; cursor: pointer; }
-  .amcell:hover { background: #eef4f7; }
-  .amempty { color: #b8c4ca; }
-  .amchip { padding: 1px 8px; border: 1px solid #8aa5b3; border-radius: 10px; background: #f0f5f7; }
-  .amchip.selected { background: #cfe8ff; border-color: #1a6fb5; box-shadow: 0 0 0 2px #cfe8ff; }
-  .amchip.staged { background: #ffe9b3; border-color: #b58105; }
+  .amcell:hover { background: var(--btn-hover); }
+  .amempty { color: var(--faint); }
+  .amchip { padding: 1px 8px; border: 1px solid var(--btn-border); border-radius: 10px;
+            background: var(--btn-bg); color: var(--text); }
+  .amchip.selected { background: var(--accent-bg); border-color: var(--accent);
+                     box-shadow: 0 0 0 2px var(--accent-bg); }
+  .amchip.staged { background: var(--warn-bg); border-color: var(--warn); }
   .ampool { margin-top: 8px; }
-  .amstagedlist { margin-top: 6px; color: #7a5a05; font-size: 12px; }
+  .amstagedlist { margin-top: 6px; color: var(--warn); font-size: 12px; }
   .ambar { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
-  #ammsg { color: #a82a2a; font-size: 12px; }
+  #ammsg { color: var(--bad); font-size: 12px; }
 </style>
 </head>
-<body>
-  <h1>ECANDI</h1>
+<body class="dark">
   <div class="bar">
-    <span class="scenegrp">
+    <span class="brand">ECANDI</span>
+    <span class="scene mono" id="sceneName" title=""></span>
+    <span class="grp">
       <button id="btnSceneNew" title="Create an empty scene (inherits current defaults)">New scene</button>
       <button id="btnSceneOpen" title="Open an existing scene (sources.json)">Open…</button>
       <button id="btnSceneSaveAs" title="Copy the current scene to a new file and switch to it">Save As…</button>
     </span>
-    <span id="supPill" class="pill down">supervisor: —</span>
-    <button id="btnStart">Start supervisor</button>
-    <button id="btnStopAll">Stop everything</button>
-    <button id="btnRescan">Rescan config</button>
-    <button id="btnAdd">+ Add player</button>
-    <button id="btnPrevAll" title="Preview receivers make senders encode — OFF disconnects them">Previews: ON</button>
-    <span class="path" id="cfgPath"></span>
+    <span class="grp">
+      <span id="supPill" class="pill down">supervisor: —</span>
+      <button id="btnStart">Start supervisor</button>
+      <button id="btnStopAll">Stop everything</button>
+      <button id="btnRescan">Rescan config</button>
+    </span>
+    <span class="grp">
+      <button id="btnAdd">+ Add player</button>
+      <button id="btnPrevAll" title="Preview receivers make senders encode — OFF disconnects them">Previews: ON</button>
+      <button id="btnTheme" title="Toggle dark/light theme">Theme</button>
+    </span>
   </div>
   <div id="msg"></div>
   <table id="tbl">
@@ -139,12 +214,12 @@
     <p>
       <button id="btnSave">Save to sources.json</button>
       <button id="btnCancel">Cancel</button>
-      <span style="color:#5c7080;font-size:12px">Saving edits the file only — use Reload (existing player) or Rescan (added/removed player) to apply.</span>
+      <span class="hint">Saving edits the file only — use Reload (existing player) or Rescan (added/removed player) to apply.</span>
     </p>
   </div>
 
-  <h1 style="margin-top:16px">Audio Manager</h1>
-  <div id="amhelp" style="color:#5c7080;font-size:12px;margin-bottom:6px">
+  <h2>Audio Manager</h2>
+  <div id="amhelp" class="hint" style="margin-bottom:6px">
     Click a player chip, then a channel row, to stage a move. Connect saves the config and
     rebuilds exactly that player's audio plane (~3–7 s gap for them; siblings untouched).
   </div>
