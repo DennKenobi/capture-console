@@ -20,8 +20,12 @@ function fmtStats(st) {
 	return bits.join(' · ');
 }
 
-function planeCell(worker, playerStats) {
-	if (!worker) return '<span class="st unknown">no supervisor</span>';
+function planeCell(worker, playerStats, supUp) {
+	// distinguish "supervisor down" from "supervisor up but this worker isn't in
+	// its table" (Session 9: the old blanket label misread as a system failure)
+	if (!worker) return supUp
+		? '<span class="st unknown">no worker — rescan to start</span>'
+		: '<span class="st unknown">no supervisor</span>';
 	const st = worker.state || 'unknown';
 	let html = `<span class="st ${st}">${st}</span>`;
 	// worker-reported truth (Session 8): the meter dying alongside this chip is the proof
@@ -98,6 +102,9 @@ function videoBadgeText(name, host, workers, status) {
 	if (w.state !== 'running') return w.state;
 	if (host) {
 		const ps = host.playerStats && host.playerStats[name];
+		// host is up but has never emitted anything for this player: the surface
+		// doesn't exist in it (player added without a rescan)
+		if (!ps) return 'not in host — rescan';
 		const ev = ps && ps.lastEv;
 		if (ev === 'stopped') return 'stopped';
 		if (ev === 'window-failed') return 'failed';
@@ -346,8 +353,8 @@ function render(state) {
 		$(`ndi-${name}`).textContent = state.ndiNames && state.ndiNames[name] ? state.ndiNames[name] : '';
 		const videoWorker = host || workers.get(`${name}/video`);
 		const playerStats = host && host.playerStats ? host.playerStats[name] : null;
-		$(`vcell-${name}`).innerHTML = planeCell(videoWorker, playerStats);
-		$(`acell-${name}`).innerHTML = planeCell(workers.get(`${name}/audio`));
+		$(`vcell-${name}`).innerHTML = planeCell(videoWorker, playerStats, up);
+		$(`acell-${name}`).innerHTML = planeCell(workers.get(`${name}/audio`), null, up);
 
 		// preview chrome (targeted updates on existing row DOM)
 		const rowOn = prev.global && prev.available && !prev.rowOff.includes(name);
@@ -438,6 +445,7 @@ function openEditor(name) {
 		? lastState.config.sources.find(s => s.name === name) : null;
 	const v = (src && src.video) || {};
 	const a = (src && src.audio) || {};
+	$('f_paste').value = '';
 	$('f_name').value = src ? src.name : '';
 	$('f_streamId').value = src ? src.streamId || '' : '';
 	$('f_room').value = src ? src.room || '' : '';
@@ -456,6 +464,46 @@ function openEditor(name) {
 
 function numOrOmit(val) {
 	return val === '' ? undefined : Number(val);
+}
+
+// Paste-and-parse (Session 9, operator request): the natural workflow is copying a
+// vdo.ninja link (director "solo view" links look like ?view=ID&solo&room=ROOM) and
+// letting the editor extract the pieces. view/push → Stream ID, room → Room; params
+// the console MANAGES (noaudio/novideo/audiooutput/channels/channeloffset/…) are
+// dropped with a note; everything else (solo, password, …) is kept as extra params
+// on BOTH planes — vdo.ninja ignores params that don't apply to a given view.
+function parseVdoLink(text) {
+	let t = (text || '').trim();
+	if (!t || !t.includes('?')) return null;
+	if (!/^https?:\/\//i.test(t)) t = 'https://' + t;
+	let url;
+	try { url = new URL(t); } catch { return null; }
+	const managed = new Set(['view', 'push', 'room', 'noaudio', 'novideo', 'audiooutput',
+		'outputdevice', 'od', 'sink', 'channels', 'channeloffset', 'autostart', 'webcam']);
+	const out = { streamId: '', room: '', extras: [], dropped: [] };
+	for (const [k, v] of new URLSearchParams(url.search)) {
+		if (k === 'view' || k === 'push') { out.streamId = v; continue; }
+		if (k === 'room') { out.room = v; continue; }
+		if (managed.has(k.toLowerCase())) { out.dropped.push(k); continue; }
+		out.extras.push(v === '' ? k : `${k}=${v}`);
+	}
+	if (!out.streamId && !out.room && !out.extras.length) return null;
+	return out;
+}
+
+function applyPastedLink() {
+	const parsed = parseVdoLink($('f_paste').value);
+	if (!parsed) return;
+	if (parsed.streamId) $('f_streamId').value = parsed.streamId;
+	if (parsed.room) $('f_room').value = parsed.room;
+	const extra = parsed.extras.join('&');
+	if (extra) { $('f_vextra').value = extra; $('f_aextra').value = extra; }
+	if (!$('f_name').value.trim() && parsed.streamId) $('f_name').value = parsed.streamId;
+	setMsg(`link parsed — streamId: ${parsed.streamId || '(none)'}`
+		+ (parsed.room ? `, room: ${parsed.room}` : '')
+		+ (extra ? `, extra params on both planes: ${extra}` : '')
+		+ (parsed.dropped.length ? ` (dropped, console-managed: ${parsed.dropped.join(', ')})` : ''));
+	previewUrls();
 }
 
 function formSource() {
@@ -503,9 +551,16 @@ async function saveEditor() {
 	else config.sources.push(source);
 	const res = await window.cc.saveConfig(config);
 	if (!res.ok) return setMsg('not saved: ' + res.errors.join('; '));
-	setMsg(editing
-		? `Saved. Apply with the ${source.name} reload buttons (video/audio as changed).`
-		: 'Saved. Rescan to bring the new player up.');
+	// New players auto-rescan (Session 9): symmetrical with Remove, and "save then
+	// nothing happens until an unrelated-looking button" was a real operator trap.
+	if (!editing && lastState.supervisorPid) {
+		await window.cc.command('rescan');
+		setMsg(`Saved — rescan issued, bringing ${source.name} up (workers spawn sequenced, ~10 s).`);
+	} else {
+		setMsg(editing
+			? `Saved. Apply with the ${source.name} reload buttons (video/audio as changed).`
+			: 'Saved. Start the supervisor to bring the player up.');
+	}
 	$('editor').hidden = true;
 	editing = null;
 	tick();
@@ -604,6 +659,7 @@ $('btnRescan').addEventListener('click', async () => {
 });
 $('btnAdd').addEventListener('click', () => openEditor(''));
 $('btnSave').addEventListener('click', saveEditor);
+$('f_paste').addEventListener('input', applyPastedLink);
 $('btnCancel').addEventListener('click', () => { $('editor').hidden = true; editing = null; });
 for (const el of document.querySelectorAll('#editor input, #editor select')) el.addEventListener('input', previewUrls);
 

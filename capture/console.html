@@ -25,7 +25,9 @@
   #editor h2 { font-size: 14px; margin: 0 0 8px; }
   #editor .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 12px; }
   #editor label { display: block; font-size: 11px; color: #5c7080; }
-  #editor input { width: 100%; box-sizing: border-box; font: inherit; padding: 2px 4px; }
+  #editor input, #editor select { width: 100%; box-sizing: border-box; font: inherit; padding: 2px 4px; }
+  #editor .pasterow { margin-bottom: 8px; }
+  #editor .pasterow input { font-family: Consolas, monospace; font-size: 12px; }
   #editor .urls { margin-top: 8px; font-family: Consolas, monospace; font-size: 11px; word-break: break-all; color: #33515e; }
   #editor .urls b { color: #182026; }
   #msg { color: #a82a2a; margin: 6px 0; white-space: pre-wrap; }
@@ -99,6 +101,10 @@
 
   <div id="editor" hidden>
     <h2 id="edTitle">Edit player</h2>
+    <div class="pasterow">
+      <label>Paste a vdo.ninja link (solo view / view / push) — fills Stream ID, Room, and extra params</label>
+      <input id="f_paste" placeholder="https://vdo.ninja/?view=iPhone13&solo&room=DENNTEST1">
+    </div>
     <div class="grid">
       <div><label>Name</label><input id="f_name"></div>
       <div><label>Stream ID</label><input id="f_streamId"></div>
