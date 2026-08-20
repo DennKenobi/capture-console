@@ -67,7 +67,10 @@ module.exports = {
 	// packaged asar — the dev tree's package.json keeps upstream's main.js.
 	extraMetadata: {
 		main: 'capture/ecandi-entry.js',
-		description: 'ECANDI — NDI capture console for vdo.ninja multi-guest production',
+		// Functional description only — the product is not branded with the NDI
+		// name (Dennis, 2026-08-20); NDI is named where it describes a capability,
+		// not in anything that reads as a tagline.
+		description: 'ECANDI — multi-guest capture console for live production',
 		// Electron's app.getName() reads the PACKAGED package.json's productName,
 		// falling back to name — and upstream's productName lives under "build",
 		// which Electron never sees. Without this the installed profile lands in

@@ -39,15 +39,21 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><style>
     font-size:${17 * SCALE}px; font-weight:700; letter-spacing:${2.5 * SCALE}px;
     color:#e7e9ea; text-shadow:0 0 ${6 * SCALE}px rgba(0,224,233,.55);
   }
-  .sub{
-    margin-top:${7 * SCALE}px; font-size:${7.5 * SCALE}px; letter-spacing:${0.7 * SCALE}px;
-    color:#8b98a5; text-transform:uppercase; text-align:center; line-height:1.7;
+  .rule{
+    margin-top:${16 * SCALE}px; width:${44 * SCALE}px; height:${2 * SCALE}px; border-radius:2px;
+    background:linear-gradient(90deg, rgba(0,224,233,0), #00e0e9, rgba(0,224,233,0));
+    opacity:.75;
   }
 </style></head><body>
   <div class="mark">${markSvg}</div>
   <div class="word">ECANDI</div>
-  <div class="sub">NDI capture<br>console</div>
+  <div class="rule"></div>
 </body></html>`;
+// NO TAGLINE. There is no official ECANDI tagline, and the product is
+// deliberately not branded with the NDI name (Dennis, 2026-08-20) — NDI is
+// named only where it describes a capability, never as brand furniture. An
+// earlier revision of this file carried an invented "NDI capture console"
+// subtitle; do not reintroduce one without an explicit decision.
 
 /** 24-bit BMP: bottom-up rows, each padded to a 4-byte boundary.
  *  nativeImage.toBitmap() hands back **BGRA**, which is already the channel
