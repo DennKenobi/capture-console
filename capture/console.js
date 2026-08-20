@@ -316,11 +316,15 @@ async function amConnect() {
 
 function render(state) {
 	lastState = state;
+	// scene identity lives in the title bar (Session 10 Part A)
+	document.title = `ECANDI — ${state.sceneName || 'no scene'}`;
 	$('cfgPath').textContent = state.configPath;
 	const up = !!(state.supervisorPid && state.status);
 	$('supPill').textContent = up
 		? `supervisor: running pid ${state.supervisorPid} (${state.status.videoTopology})`
-		: state.supervisorPid ? `supervisor: pid ${state.supervisorPid} (no status yet)` : 'supervisor: stopped';
+		: state.sceneMismatch
+			? `supervisor here runs a different scene (${state.sceneMismatch})`
+			: state.supervisorPid ? `supervisor: pid ${state.supervisorPid} (no status yet)` : 'supervisor: stopped';
 	$('supPill').className = `pill ${up ? 'up' : 'down'}`;
 	$('btnStart').disabled = !!state.supervisorPid;
 	$('btnStopAll').disabled = !state.supervisorPid;
@@ -336,7 +340,7 @@ function render(state) {
 	$('btnPrevAll').disabled = !prev.available;
 	if (!prev.available && prev.reason) $('btnPrevAll').title = prev.reason;
 
-	const sources = state.config ? state.config.sources : [];
+	const sources = state.config && Array.isArray(state.config.sources) ? state.config.sources : [];
 	const key = sources.map(s => s.name).join('|');
 	if (key !== rowsKey) {
 		rowsKey = key;
@@ -671,6 +675,27 @@ $('btnRescan').addEventListener('click', async () => {
 	const res = await window.cc.command('rescan');
 	setMsg(res.ok ? 'Rescan sent.' : `Failed: ${res.error}`);
 });
+// Scenes (Session 10 Part A): native dialogs live in main; the renderer just
+// resets its per-scene DOM fingerprints so the new scene rebuilds cleanly.
+async function sceneOp(op) {
+	const res = await window.cc[op]();
+	if (res.cancelled) return;
+	if (!res.ok) return setMsg(`scene: ${res.error}`);
+	rowsKey = '';
+	amGridKey = '';
+	amStaged.clear();
+	amSelected = null;
+	$('editor').hidden = true;
+	editing = null;
+	setMsg(res.unchanged
+		? ''
+		: `Scene: ${res.path}` + (res.warnings && res.warnings.length ? ` — problems: ${res.warnings.join('; ')}` : ''));
+	tick();
+}
+$('btnSceneNew').addEventListener('click', () => sceneOp('sceneNew'));
+$('btnSceneOpen').addEventListener('click', () => sceneOp('sceneOpen'));
+$('btnSceneSaveAs').addEventListener('click', () => sceneOp('sceneSaveAs'));
+
 $('btnAdd').addEventListener('click', () => openEditor(''));
 $('btnSave').addEventListener('click', saveEditor);
 $('f_paste').addEventListener('input', applyPastedLink);

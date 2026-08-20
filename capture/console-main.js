@@ -14,7 +14,7 @@
 // re-adopts a running supervisor by reading the same files.
 'use strict';
 
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -31,11 +31,14 @@ function argOf(name, dflt) {
 const USER_DATA_DIR = argOf('user-data-dir', '');
 if (USER_DATA_DIR) app.setPath('userData', path.resolve(USER_DATA_DIR));
 
-const CONFIG_PATH = path.resolve(argOf('config', path.join(__dirname, 'sources.json')));
-const configDir = path.dirname(CONFIG_PATH);
-const pidPath = path.join(configDir, 'supervisor.pid');
-const cmdPath = path.join(configDir, 'supervisor.cmd');
-const statusPath = path.join(configDir, 'supervisor-status.json');
+// Scene = a sources.json (Session 10 Part A). The console can switch scenes at
+// runtime; every coupling path derives from the CURRENT scene file, and the
+// supervisor coupling files live beside it (one supervisor per scene dir).
+let configPath = path.resolve(argOf('config', path.join(__dirname, 'sources.json')));
+let configDir = path.dirname(configPath);
+let pidPath = path.join(configDir, 'supervisor.pid');
+let cmdPath = path.join(configDir, 'supervisor.cmd');
+let statusPath = path.join(configDir, 'supervisor-status.json');
 
 function supervisorPid() {
 	try {
@@ -47,6 +50,18 @@ function supervisorPid() {
 
 function readJson(p) {
 	try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; }
+}
+
+// The status snapshot of THIS scene's supervisor — null when the supervisor is
+// gone, stale (wedged), or running a DIFFERENT scene that shares this folder
+// (coupling files are per-dir; a mismatched supervisor is not ours to command,
+// mute against, or misroute-evaluate).
+function ourStatus() {
+	if (!supervisorPid()) return null;
+	const status = readJson(statusPath);
+	if (!status || Date.now() - status.at > 8000) return null;
+	if (status.configPath && path.resolve(status.configPath) !== configPath) return null;
+	return status;
 }
 
 // ---- previews (Session 7 Part A) -------------------------------------------
@@ -104,7 +119,7 @@ function popoutToggle(player) {
 
 function popoutSync() {
 	// close pop-outs whose player left the config (rescan-removed)
-	const config = readJson(CONFIG_PATH);
+	const config = readJson(configPath);
 	const names = new Set(config && config.sources ? config.sources.map(s => s.name) : []);
 	for (const [player, win] of [...popouts]) {
 		if (names.has(player)) continue;
@@ -121,7 +136,7 @@ let previewGlobal = true;
 const previewRowOff = new Set(); // per-row opt-outs (default on)
 
 function previewSync() {
-	const config = readJson(CONFIG_PATH);
+	const config = readJson(configPath);
 	const entries = [];
 	if (previewGlobal && config && config.sources && !builder.validateConfig(config).length) {
 		for (const s of config.sources) {
@@ -143,7 +158,7 @@ const meters = new Map(); // device fragment -> {child, backoffIdx, timer, retir
 const METER_BACKOFF_MS = [2000, 5000, 15000, 60000];
 
 function meterEndpoints() {
-	const config = readJson(CONFIG_PATH);
+	const config = readJson(configPath);
 	const out = new Set();
 	if (config && config.sources && !builder.validateConfig(config).length) {
 		const defDev = (config.defaults && config.defaults.audio && config.defaults.audio.audioOutputDevice) || '';
@@ -239,10 +254,10 @@ const misrouteState = new Map();  // player -> {actual, expected}
 
 function misrouteEval() {
 	const scan = misrouteScan;
-	const status = supervisorPid() ? readJson(statusPath) : null;
-	const config = readJson(CONFIG_PATH);
+	const status = ourStatus();
+	const config = readJson(configPath);
 	const next = new Map();
-	if (scan && status && Date.now() - status.at < 8000 && config && Array.isArray(config.sources)) {
+	if (scan && status && config && Array.isArray(config.sources)) {
 		const defDev = (config.defaults && config.defaults.audio && config.defaults.audio.audioOutputDevice) || '';
 		for (const w of status.workers) {
 			if (w.plane !== 'audio' || w.consolidated || w.state !== 'running' || !w.pid) continue;
@@ -331,9 +346,8 @@ function desiredMute(player) {
 }
 
 function muteSync(force) {
-	if (!supervisorPid()) return;
-	const status = readJson(statusPath);
-	if (!status || Date.now() - status.at > 8000) return;
+	const status = ourStatus();
+	if (!status) return;
 	const audioWorkers = status.workers.filter(w => w.plane === 'audio' && !w.consolidated);
 	// drop intent for players that left the worker table (rescan-removed): a
 	// re-added player starting silently muted would be an operator surprise
@@ -351,19 +365,158 @@ function muteSync(force) {
 	}
 }
 
+// ---- scenes (Session 10 Part A) --------------------------------------------
+// A scene IS a sources.json; New/Open/Save As re-point every coupling path at
+// it. The 2 s reconcile loops (previews, meters, mute intent, pop-outs,
+// misroute) all key off the current config, so a switch propagates on its own;
+// console-local operator state is scene-local and resets here. Switching away
+// from a RUNNING supervisor is never silent: the operator chooses
+// stop-everything or leave-running (file coupling means reopening that scene
+// later re-adopts the still-streaming workers).
+
+function applyScene(p) {
+	configPath = path.resolve(p);
+	configDir = path.dirname(configPath);
+	pidPath = path.join(configDir, 'supervisor.pid');
+	cmdPath = path.join(configDir, 'supervisor.cmd');
+	statusPath = path.join(configDir, 'supervisor-status.json');
+	muteIntent.clear();
+	soloPlayer = null;
+	muteCmdAt.clear();
+	previewRowOff.clear();
+	misrouteMiss.clear();
+	misrouteState.clear();
+	popoutsShutdown();
+	previewSync();
+	meterSync();
+	console.log(`[scene] now on ${configPath}`);
+}
+
+// 'go' | 'cancel' | an error string. Only guards OUR scene's supervisor — one
+// running a different scene in a shared folder was never ours to stop.
+async function confirmSupervisorHandover() {
+	const pid = supervisorPid();
+	if (!pid) return 'go';
+	const status = readJson(statusPath);
+	if (status && status.configPath && path.resolve(status.configPath) !== configPath) return 'go';
+	const cur = path.basename(configPath);
+	const { response } = await dialog.showMessageBox(mainWin, {
+		type: 'question',
+		title: 'Supervisor is running',
+		message: `A supervisor (pid ${pid}) is running ${cur}.`,
+		detail: 'Stop everything, then switch: every worker stops and the NDI streams end '
+			+ 'before the new scene opens.\n\nLeave running and switch: '
+			+ `${cur}'s workers keep streaming unattended (file-coupled, no console needed); `
+			+ 'reopening that scene later re-adopts them.',
+		buttons: ['Stop everything, then switch', 'Leave running and switch', 'Cancel'],
+		defaultId: 0,
+		cancelId: 2,
+		noLink: true,
+	});
+	if (response === 2) return 'cancel';
+	if (response === 1) {
+		console.log(`[scene] leaving supervisor pid ${pid} running on ${configPath}`);
+		return 'go';
+	}
+	try { fs.appendFileSync(cmdPath, 'quit\n'); } catch (err) { return `stop failed: ${err.message}`; }
+	console.log(`[scene] quit sent to supervisor pid ${pid}; waiting for shutdown`);
+	const deadline = Date.now() + 30000;
+	while (Date.now() < deadline) {
+		if (!supervisorPid()) return 'go';
+		await new Promise(r => setTimeout(r, 500));
+	}
+	return 'supervisor has not stopped yet (workers still shutting down?) — scene unchanged, try again shortly';
+}
+
+const SCENE_FILTERS = [{ name: 'Scene (sources.json)', extensions: ['json'] }];
+
+ipcMain.handle('scene-new', async () => {
+	const res = await dialog.showSaveDialog(mainWin, {
+		title: 'New scene',
+		defaultPath: path.join(configDir, 'new-scene.json'),
+		filters: SCENE_FILTERS,
+	});
+	if (res.canceled || !res.filePath) return { ok: false, cancelled: true };
+	const guard = await confirmSupervisorHandover();
+	if (guard === 'cancel') return { ok: false, cancelled: true };
+	if (guard !== 'go') return { ok: false, error: guard };
+	// a fresh scene starts EMPTY (valid since Session 9) but inherits the current
+	// defaults — same studio, same endpoints, same prefix
+	const cur = readJson(configPath);
+	const fresh = { defaults: (cur && cur.defaults) || {}, sources: [] };
+	try { fs.writeFileSync(res.filePath, JSON.stringify(fresh, null, 2) + '\n'); } catch (err) {
+		return { ok: false, error: `could not write scene: ${err.message}` };
+	}
+	applyScene(res.filePath);
+	return { ok: true, path: configPath };
+});
+
+ipcMain.handle('scene-open', async () => {
+	const res = await dialog.showOpenDialog(mainWin, {
+		title: 'Open scene',
+		defaultPath: configDir,
+		filters: SCENE_FILTERS,
+		properties: ['openFile'],
+	});
+	if (res.canceled || !res.filePaths || !res.filePaths.length) return { ok: false, cancelled: true };
+	const target = path.resolve(res.filePaths[0]);
+	if (target === configPath) return { ok: true, path: configPath, unchanged: true };
+	let parsed;
+	try { parsed = JSON.parse(fs.readFileSync(target, 'utf8')); } catch (err) {
+		return { ok: false, error: `not a readable scene: ${err.message}` };
+	}
+	// validation problems don't block opening (the editor is where you fix them) —
+	// they ride back as warnings
+	const warnings = builder.validateConfig(parsed);
+	const guard = await confirmSupervisorHandover();
+	if (guard === 'cancel') return { ok: false, cancelled: true };
+	if (guard !== 'go') return { ok: false, error: guard };
+	applyScene(target);
+	return { ok: true, path: configPath, warnings };
+});
+
+ipcMain.handle('scene-saveas', async () => {
+	let raw;
+	try { raw = fs.readFileSync(configPath); } catch (err) {
+		return { ok: false, error: `current scene unreadable: ${err.message}` };
+	}
+	const res = await dialog.showSaveDialog(mainWin, {
+		title: 'Save scene as',
+		defaultPath: path.join(configDir, 'copy-of-' + path.basename(configPath)),
+		filters: SCENE_FILTERS,
+	});
+	if (res.canceled || !res.filePath) return { ok: false, cancelled: true };
+	const target = path.resolve(res.filePath);
+	if (target === configPath) return { ok: true, path: configPath, unchanged: true };
+	const guard = await confirmSupervisorHandover();
+	if (guard === 'cancel') return { ok: false, cancelled: true };
+	if (guard !== 'go') return { ok: false, error: guard };
+	try { fs.writeFileSync(target, raw); } catch (err) {
+		return { ok: false, error: `could not write scene: ${err.message}` };
+	}
+	applyScene(target);
+	return { ok: true, path: configPath };
+});
+
 // ---- IPC surface ----------------------------------------------------------
 
 ipcMain.handle('state', () => {
-	const config = readJson(CONFIG_PATH);
+	const config = readJson(configPath);
 	const pid = supervisorPid();
-	const status = pid ? readJson(statusPath) : null;
+	const rawStatus = pid ? readJson(statusPath) : null;
+	// coupling files are per-dir: a supervisor here running a DIFFERENT scene is
+	// not ours — surface the mismatch instead of impersonating adoption
+	const mismatch = !!(rawStatus && rawStatus.configPath
+		&& path.resolve(rawStatus.configPath) !== configPath);
 	return {
-		configPath: CONFIG_PATH,
+		configPath: configPath,
+		sceneName: path.basename(configPath),
+		sceneMismatch: mismatch ? path.basename(rawStatus.configPath) : '',
 		config,
 		configErrors: config ? builder.validateConfig(config) : ['sources.json missing or unparsable'],
 		supervisorPid: pid,
 		// a status snapshot older than 8 s means the supervisor is wedged or gone
-		status: status && Date.now() - status.at < 8000 ? status : null,
+		status: ourStatus(),
 		previews: {
 			available: !previews.unavailable,
 			reason: previews.unavailable || '',
@@ -437,28 +590,41 @@ ipcMain.handle('urls', (e, source, defaults) => {
 ipcMain.handle('save-config', (e, config) => {
 	const errors = builder.validateConfig(config);
 	if (errors.length) return { ok: false, errors };
-	fs.writeFileSync(CONFIG_PATH + '.tmp', JSON.stringify(config, null, 2) + '\n');
-	fs.renameSync(CONFIG_PATH + '.tmp', CONFIG_PATH);
+	fs.writeFileSync(configPath + '.tmp', JSON.stringify(config, null, 2) + '\n');
+	fs.renameSync(configPath + '.tmp', configPath);
 	return { ok: true };
 });
 
 ipcMain.handle('command', (e, line) => {
 	if (!/^(status|reload|stop|start|mute|unmute|rescan|quit)\b/.test(line)) return { ok: false, error: 'unknown command' };
 	if (!supervisorPid()) return { ok: false, error: 'supervisor not running' };
+	const status = readJson(statusPath);
+	if (status && status.configPath && path.resolve(status.configPath) !== configPath) {
+		return { ok: false, error: `the supervisor in this folder runs a different scene (${path.basename(status.configPath)})` };
+	}
 	fs.appendFileSync(cmdPath, line.trim() + '\n');
 	return { ok: true };
 });
 
 ipcMain.handle('start-supervisor', () => {
-	if (supervisorPid()) return { ok: true, adopted: true };
-	const config = readJson(CONFIG_PATH);
+	if (supervisorPid()) {
+		const status = readJson(statusPath);
+		if (status && status.configPath && path.resolve(status.configPath) !== configPath) {
+			return {
+				ok: false,
+				error: `a supervisor in this folder is running a different scene (${path.basename(status.configPath)}) — one supervisor per scene folder`,
+			};
+		}
+		return { ok: true, adopted: true };
+	}
+	const config = readJson(configPath);
 	if (!config) return { ok: false, error: 'sources.json missing or unparsable' };
 	const errors = builder.validateConfig(config);
 	if (errors.length) return { ok: false, error: errors.join('; ') };
 	// Fully detached: no pipes, unref'd — console death cannot reach the supervisor.
 	// ELECTRON_RUN_AS_NODE turns this Electron binary into plain Node for supervisor.js
 	// (the supervisor strips the var before spawning its electron.exe workers).
-	const child = spawn(process.execPath, [path.join(__dirname, 'supervisor.js'), `--config=${CONFIG_PATH}`], {
+	const child = spawn(process.execPath, [path.join(__dirname, 'supervisor.js'), `--config=${configPath}`], {
 		detached: true,
 		stdio: 'ignore',
 		windowsHide: true,

@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('cc', {
 	audioSolo: player => ipcRenderer.invoke('audio-solo', player),
 	popoutToggle: player => ipcRenderer.invoke('popout-toggle', player),
 	audioDevices: () => ipcRenderer.invoke('audio-devices'),
+	sceneNew: () => ipcRenderer.invoke('scene-new'),
+	sceneOpen: () => ipcRenderer.invoke('scene-open'),
+	sceneSaveAs: () => ipcRenderer.invoke('scene-saveas'),
 	onPreviewFrame: cb => ipcRenderer.on('preview-frame', (e, frame) => cb(frame)),
 	onMeterUpdate: cb => ipcRenderer.on('meter-update', (e, update) => cb(update)),
 });
