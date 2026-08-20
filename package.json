@@ -1,6 +1,6 @@
 {
   "name": "VDON.Electron.Capture.App",
-  "version": "2.23.3",
+  "version": "1.0.0",
   "description": "A simple tool to aid with frameless window video capture and VDO.Ninja publishing",
   "author": "Steve Seguin <steve@seguin.email>",
   "license": "GPL-3.0-only",
@@ -15,6 +15,9 @@
     "prebuild:win32": "node ./scripts/install-window-audio-capture.js && node ./scripts/install-electron-asio.js",
     "build:win11": "electron-builder --config electron-builder.win11.js --win --x64 --publish=never",
     "prebuild:win11": "node ./scripts/install-window-audio-capture.js && node ./scripts/install-electron-asio.js",
+    "build:ecandi": "electron-builder --config electron-builder.ecandi.js --win --x64 --publish=never",
+    "prebuild:ecandi": "node ./scripts/install-window-audio-capture.js && node ./scripts/install-electron-asio.js",
+    "pack:ecandi": "electron-builder --config electron-builder.ecandi.js --win --x64 --dir",
     "build:win-arm64": "electron-builder --config electron-builder.win-arm64.js --win --arm64 --publish=never",
     "prebuild:win-arm64": "node ./scripts/install-window-audio-capture.js",
     "build:darwin": "electron-builder --mac --universal --publish=never --config.electronVersion=43.3.0 --config.electronDownload.mirror=https://github.com/electron/electron/releases/download/ --config.electronDownload.customDir=v43.3.0",
