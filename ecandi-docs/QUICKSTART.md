@@ -5,7 +5,7 @@ a named NDI stream on your network, and their microphone will be arriving
 wherever you chose to send it.
 
 ECANDI is for the person running a multi-guest live show: each guest joins
-through a vdo.ninja link, and ECANDI turns each of them into **two independent
+through a [vdo.ninja](https://vdo.ninja) link, and ECANDI turns each of them into **two independent
 things**: a named NDI video stream, and an audio feed you can place on its own
 channel of a multi-channel device. The two never touch each other, so fixing one
 guest's audio never disturbs anyone's video, and you can use one without the

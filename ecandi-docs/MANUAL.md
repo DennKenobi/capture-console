@@ -156,7 +156,8 @@ Two more you'll see when things aren't wired up rather than broken:
 
 ### Adding and editing guests
 
-**Edit** (or **+ Add player**) opens the form. Paste a vdo.ninja link in the top
+**Edit** (or **+ Add player**) opens the form. Paste a [vdo.ninja](https://vdo.ninja)
+link in the top
 field and ECANDI fills in the Stream ID and room, keeps parameters it doesn't
 manage (like `&solo` and passwords), and drops the ones it sets itself.
 

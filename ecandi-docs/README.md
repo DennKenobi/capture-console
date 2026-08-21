@@ -72,8 +72,7 @@ app behaves:
 
 ## What ECANDI is built on
 
-ECANDI exists because of two projects by **Steve Seguin**, and it is worth being
-plain about how much of the work is his.
+ECANDI exists because of two incredible projects by **Steve Seguin**:
 
 **[vdo.ninja](https://vdo.ninja)** is how the guests get here at all. It solves
 the genuinely hard part: getting live camera and microphone from someone's
