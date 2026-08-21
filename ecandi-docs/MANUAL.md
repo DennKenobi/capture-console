@@ -324,11 +324,9 @@ Look at **drop** and **paint-fps** across the rows.
   (720p costs roughly half of 1080p). ECANDI degrades gracefully under load and
   recovers on its own when the pressure lifts.
 
-Running the guests' browsers on the *same* machine as ECANDI is by far the most
-expensive thing you can do. In a real show they are on the guests' machines.
-Also, in our testing, a guest on Chrome or Edge cost noticeably less than the
-same guest on Firefox. That is worth suggesting to a guest whose feed is
-struggling, though your mileage may differ.
+In our testing, a guest on Chrome or Edge cost noticeably less than the same
+guest on Firefox. That is worth suggesting to a guest whose feed is struggling,
+though your mileage may differ.
 
 ### A guest's NDI name won't come back after removing and re-adding them
 
