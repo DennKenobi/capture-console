@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>ECANDI — Quick Start</title>
+<title>ECANDI Quick Start</title>
 <style>
 :root {
   --bg:#0a0f1f; --panel:#111a30; --panel2:#182238; --border:#2c3a5c; --border-soft:#1f2b47;
@@ -58,38 +58,46 @@ img { max-width:100%; border:1px solid var(--border); border-radius:10px; displa
 </head>
 <body>
 <div class="wrap">
-<div class="nav"><a href="QUICKSTART.html" class="here">Quick Start</a><a href="MANUAL.html">Manual</a></div>
-<h1 id="ecandi-quick-start">ECANDI — Quick Start</h1>
+<div class="nav"><a href="README.html">Introduction</a><a href="QUICKSTART.html" class="here">Quick Start</a><a href="MANUAL.html">Manual</a></div>
+<h1 id="ecandi-quick-start">ECANDI Quick Start</h1>
 <p>Your first fifteen minutes. By the end of it, one remote guest's camera will be
-an NDI source in OBS and their microphone will be on its own mixer channel.</p>
+a named NDI stream on your network, and their microphone will be arriving
+wherever you chose to send it.</p>
 <p>ECANDI is for the person running a multi-guest live show: each guest joins
 through a vdo.ninja link, and ECANDI turns each of them into <strong>two independent
-things</strong> — a named NDI video stream for OBS, and one dedicated audio channel on
-a virtual audio cable. The two never touch each other, so fixing one guest's
-audio never disturbs anyone's video.</p>
+things</strong>: a named NDI video stream, and an audio feed you can place on its own
+channel of a multi-channel device. The two never touch each other, so fixing one
+guest's audio never disturbs anyone's video, and you can use one without the
+other.</p>
 <hr>
 <h2 id="before-you-start">Before you start</h2>
-<p>You need three things besides ECANDI:</p>
+<p><strong>One thing is genuinely required:</strong> a vdo.ninja link for each guest, either a
+&quot;solo view&quot; link from your director's room or any <code>?view=…</code> / <code>?push=…</code> link.
+That is how their camera and microphone reach your machine.</p>
+<p>Everything else depends on what you want out of ECANDI. Its two jobs, video out
+as NDI and audio placed on channels, are independent of each other, and you can
+use either one, both, or a simpler version of either:</p>
 <table>
-<thead><tr><th>Thing</th><th>Why</th><th>Notes</th></tr></thead>
+<thead><tr><th>If you want</th><th>You need</th><th>Notes</th></tr></thead>
 <tbody>
-<tr><td><strong>A vdo.ninja link per guest</strong></td><td>This is how their camera and mic reach your machine</td><td>A &quot;solo view&quot; link from your director's room, or any <code>?view=…</code> / <code>?push=…</code> link</td></tr>
-<tr><td><strong>A multi-channel virtual audio device</strong></td><td>Where each guest's audio lands, one guest per channel</td><td>VB-Audio Matrix (or VoiceMeeter) with an 8-channel VAIO is the tested setup</td></tr>
-<tr><td><strong>OBS with the DistroAV (NDI) plugin</strong></td><td>Consumes the video streams</td><td>On this machine or any machine on the same network</td></tr>
+<tr><td><strong>Each guest's video as its own NDI stream</strong></td><td>Something on your network that receives NDI</td><td>Any NDI receiver works: another application, a hardware device, a monitoring tool. OBS with the DistroAV plugin is what this guide uses for examples, because it is the setup ECANDI was tested against</td></tr>
+<tr><td><strong>Each guest's audio on its own channel</strong></td><td>A multi-channel virtual audio device</td><td>VB-Audio Matrix (or VoiceMeeter) presenting an 8-channel VAIO is the tested setup. This is what lets you treat guests as separate mixer inputs</td></tr>
+<tr><td><strong>Guests' audio, but not separated</strong></td><td>Nothing extra</td><td>Leave the audio device and channel fields blank. Each guest's audio then plays out your normal playback device, mixed together like any other application's sound</td></tr>
+<tr><td><strong>No audio from ECANDI at all</strong></td><td>Nothing extra</td><td>Stop each guest's audio plane from the console. Their video is completely unaffected</td></tr>
 </tbody>
 </table>
-<p>If you only want to see ECANDI work, you can skip the audio device — video alone
-is a complete demonstration.</p>
+<p>Video and audio never depend on each other, so a missing piece on one side costs
+you nothing on the other.</p>
 <hr>
 <h2 id="1-install">1. Install</h2>
 <p>Run <strong><code>ECANDI-setup-1.0.0.exe</code></strong>.</p>
 <ul>
 <li>Windows SmartScreen will warn you that the publisher is unknown. ECANDI v1 is not code-signed. Choose <strong>More info → Run anyway</strong>.</li>
-<li>The installer asks nothing except where to put it. It installs <strong>just for you</strong> — no administrator prompt, no elevation.</li>
+<li>The installer asks nothing except where to put it. It installs <strong>just for you</strong>, with no administrator prompt and no elevation.</li>
 <li>Default location: <code>C:\Users\&lt;you&gt;\AppData\Local\Programs\ECANDI</code></li>
 </ul>
 <p>You get <strong>ECANDI</strong> in the Start menu and on the desktop. Nothing else needs
-installing — the custom Electron runtime, the NDI runtime, the native sender
+installing. The custom Electron runtime, the NDI runtime, the native sender
 module, and the PowerShell helpers all ship inside the app.</p>
 <blockquote><p><strong>Portable option:</strong> <code>ECANDI-portable-1.0.0.exe</code> runs without installing.
 Same app; it unpacks to a temporary folder on each launch.</p>
@@ -100,82 +108,88 @@ Same app; it unpacks to a temporary folder on each launch.</p>
 <p><img src="../images/01-first-launch.png" alt="The console on first launch"></p>
 <p>A few things to know about this window:</p>
 <ul>
-<li><strong>It is the only window you need.</strong> Everything else ECANDI runs — the supervisor, the video host, one audio worker per guest — is a background process it manages for you.</li>
+<li><strong>It is the only window you need.</strong> Everything else ECANDI runs (the supervisor, the video host, one audio worker per guest) is a background process it manages for you.</li>
 <li><strong>The scene</strong> (<code>default.json</code>, named in the title bar) is your guest list. It lives in <code>Documents\ECANDI\</code>, not inside the installed app, so it survives upgrades and uninstalls.</li>
 <li><strong>Nothing is running yet.</strong> The red <code>supervisor: stopped</code> pill tells you so.</li>
 </ul>
 <hr>
 <h2 id="3-add-your-first-guest">3. Add your first guest</h2>
 <p>Click <strong>+ Add player</strong>.</p>
-<p>Copy the guest's vdo.ninja link and paste it into the top field — the one
-labelled <em>Paste a vdo.ninja link</em>. ECANDI reads the link and fills in the
+<p>Copy the guest's vdo.ninja link and paste it into the top field, the one
+labeled <em>Paste a vdo.ninja link</em>. ECANDI reads the link and fills in the
 Stream ID for you, keeping any parameters that matter (like <code>&amp;solo</code>) and
 dropping the ones it manages itself.</p>
 <p><img src="../images/02-add-player.png" alt="Pasting a guest link"></p>
 <p>Then set three things:</p>
 <ol>
-<li><strong>Name</strong> — how this guest appears everywhere: in the console, in the NDI stream name, on your OBS source. Use something short and real: <code>Alice</code>.</li>
-<li><strong>Audio output device</strong> — pick your virtual cable from the dropdown. It lists every playback device on the machine with its channel count, so the 8-channel one is easy to spot.</li>
-<li><strong>Channel offset</strong> — which channel this guest's audio lands on, counting from <strong>0</strong>. Offset <code>0</code> is channel 1, offset <code>1</code> is channel 2, and so on. Give every guest their own.</li>
+<li><strong>Name.</strong> How this guest appears everywhere: in the console, in the NDI stream name, and wherever you subscribe to it. Use something short and real: <code>Alice</code>.</li>
+<li><strong>Audio output device.</strong> Where this guest's audio should play. The dropdown lists every playback device on the machine with its channel count, so a multi-channel one is easy to spot. Leave it blank to use your normal playback device.</li>
+<li><strong>Channel offset.</strong> Which channel this guest's audio lands on, counting from <strong>0</strong>. Offset <code>0</code> is channel 1, offset <code>1</code> is channel 2, and so on. Give every guest their own. Leave it blank if you are not separating guests onto channels.</li>
 </ol>
-<p>Leave Width, Height, and FPS blank unless you have a reason — blank means
+<p>Leave Width, Height, and FPS blank unless you have a reason. Blank means
 1920×1080 at 30 fps, which is what most shows want.</p>
 <p>Watch the three lines under the form as you type. They show the exact URLs and
-NDI name ECANDI will use. That's the whole configuration, visible before you
-commit to it.</p>
+NDI name ECANDI will use. The whole configuration is visible before you commit
+to it.</p>
 <p>Click <strong>Save to sources.json</strong>. The guest appears as a row.</p>
 <p>Repeat for each guest. Give each one a different channel offset.</p>
 <blockquote><p><strong>In-room links need <code>&amp;solo</code>.</strong> If your guests are in a vdo.ninja <em>room</em> and
 you paste a plain room view link, ECANDI will connect to nothing. The solo
-link from the director panel is the one to copy — it already has <code>&amp;solo</code> in
+link from the director panel is the one to copy; it already has <code>&amp;solo</code> in
 it, and pasting keeps it.</p>
 </blockquote>
 <hr>
 <h2 id="4-start-everything">4. Start everything</h2>
 <p>Click <strong>Start supervisor</strong>.</p>
-<p>ECANDI brings the guests up one at a time — video first, then audio — waiting
+<p>ECANDI brings the guests up one at a time, video first and then audio, waiting
 for each to finish loading before starting the next. Give it fifteen seconds or
-so per guest. Rushing this is what breaks other setups; ECANDI deliberately
-doesn't.</p>
+so per guest. Rushing this is what breaks other setups, so ECANDI does not
+rush it.</p>
 <p><img src="../images/03-live-session.png" alt="A live session"></p>
 <p>When a guest is fully up you see, on their row:</p>
 <ul>
-<li>A live <strong>video thumbnail</strong>. This is not a local copy — it is ECANDI receiving its own NDI stream back, so what you see is exactly what OBS will get.</li>
+<li>A live <strong>video thumbnail</strong>, which is proof the stream is really on the network: ECANDI draws it by receiving its own NDI output back. <strong>It is not what your receiver gets.</strong> The thumbnail is intentionally a small, low frame-rate preview so that watching your guests costs almost nothing. The stream itself stays full resolution at the full frame rate no matter how coarse or stuttery the little picture looks. Judge stream quality at your receiver, never here.</li>
 <li>Green <strong>RUNNING</strong> chips on both planes, with the process id and live stats (<code>30 paint-fps · sent 5941 · drop 0</code>).</li>
 <li>A moving <strong>audio meter</strong> with the channel number beside it.</li>
 </ul>
 <p>The <strong>Audio Manager</strong> below the rows shows the same thing channel by channel:
-each of your virtual cable's channels, its live level, and which guest is
-assigned to it.</p>
+each channel of the device you chose, its live level, and which guest is
+assigned to it. (If you left the audio fields blank, there is nothing to show
+here, which is expected rather than a fault.)</p>
 <hr>
-<h2 id="5-point-obs-at-the-streams">5. Point OBS at the streams</h2>
-<p>Each guest is now on the network as an NDI source named <strong><code>CC-&lt;Name&gt;</code></strong> — so
-<code>Alice</code> is <code>CC-Alice</code>. It shows up in OBS as <code>&lt;YOUR-PC&gt; (CC-Alice)</code>.</p>
-<p>In OBS: <strong>Add Source → NDI Source</strong>, pick the guest, and set the source's
-bandwidth to <strong>Highest</strong>. Do that once per guest.</p>
-<p>The names never change when ECANDI restarts a guest, so your OBS scenes keep
-working through anything ECANDI does. That is the point of naming them.</p>
+<h2 id="5-point-your-ndi-receiver-at-the-streams">5. Point your NDI receiver at the streams</h2>
+<p>Each guest is now on the network as an NDI source named <strong><code>CC-&lt;Name&gt;</code></strong>, so
+<code>Alice</code> is <code>CC-Alice</code>. NDI receivers show it with the machine name in front:
+<code>&lt;YOUR-PC&gt; (CC-Alice)</code>.</p>
+<p>Whatever receives NDI on your network can pick these up. If that is OBS with the
+DistroAV plugin (the setup this guide is written against), it is <strong>Add Source →
+NDI Source</strong>, pick the guest, and set the source's bandwidth to <strong>Highest</strong>, once
+per guest. Other receivers differ in the details but the idea is the same: find
+the guest by name and subscribe to it.</p>
+<p>The names never change when ECANDI restarts a guest, so whatever you have
+pointed at them keeps working through anything ECANDI does, which is why they
+are named rather than numbered.</p>
 <blockquote><p><code>CC-</code> is the default prefix and you can change it per scene, but you rarely
-should — your OBS scenes are bound to these names.</p>
+should, because your receiver is bound to these names.</p>
 </blockquote>
 <hr>
 <h2 id="6-route-the-audio">6. Route the audio</h2>
-<p>Your guests' audio is now on separate channels of one virtual device. From
-there it is your audio setup's business, not ECANDI's: in VB-Audio Matrix (or
-whatever you use), each channel goes wherever you send it — to Dante, to a
-mixer, to a recorder.</p>
-<p>The meters in ECANDI tell you the audio truly arrived at the device, which is
-the only part ECANDI can promise.</p>
+<p>Skip this if you are not separating guests onto channels.</p>
+<p>If you are, each guest's audio is now on its own channel of the device you
+picked. From there it is your audio setup's business, not ECANDI's: in VB-Audio
+Matrix (or whatever you use), each channel goes wherever you send it: to Dante,
+to a mixer, to a recorder.</p>
+<p>ECANDI's meters tell you the audio truly arrived at that device. That much
+ECANDI can promise; everything past the device is your routing.</p>
 <hr>
-<h2 id="7-the-two-controls-youll-actually-use-live">7. The two controls you'll actually use live</h2>
-<p><strong>Mute</strong> — silences one guest instantly. The row shows a red <strong>MUTED</strong> chip and
+<h2 id="7-two-controls-worth-knowing-before-you-go-live">7. Two controls worth knowing before you go live</h2>
+<p><strong>Mute</strong> silences one guest instantly. The row shows a red <strong>MUTED</strong> chip and
 their meter dies; everyone else is untouched. It mutes the audio <em>page</em>, not
 the routing, so unmuting is instant and nothing reconnects.</p>
-<p><strong>Reload audio</strong> — the fix for one guest's audio going wrong. It rebuilds only
-that guest's audio, taking about 3–7 seconds. Their video does not flicker,
+<p><strong>Reload audio</strong> is the fix for one guest's audio going wrong. It rebuilds only
+that guest's audio, taking about 3 to 7 seconds. Their video does not flicker,
 and no other guest is affected at all.</p>
-<p>You will not need to restart everything to fix one person. That is the whole
-design.</p>
+<p>You will not need to restart everything to fix one person.</p>
 <hr>
 <h2 id="reading-the-row-at-a-glance">Reading the row at a glance</h2>
 <table>
@@ -183,20 +197,20 @@ design.</p>
 <tbody>
 <tr><td><strong>RUNNING</strong> (green)</td><td>Working normally</td><td>Nothing</td></tr>
 <tr><td><strong>starting</strong> (amber)</td><td>Coming up</td><td>Wait</td></tr>
-<tr><td><strong>rebuilding</strong> (amber)</td><td>Recovering by itself after a crash</td><td>Wait — it self-heals</td></tr>
+<tr><td><strong>rebuilding</strong> (amber)</td><td>Recovering by itself after a crash</td><td>Wait; it self-heals</td></tr>
 <tr><td><strong>failed</strong> (red)</td><td>Gave up after repeated failures</td><td>Check the guest is still connected, then <strong>start</strong></td></tr>
 <tr><td><strong>stopped</strong> (grey)</td><td>You stopped it</td><td><strong>start</strong> when you want it back</td></tr>
 <tr><td><strong>MUTED</strong> (red)</td><td>You muted this guest</td><td><strong>unmute</strong></td></tr>
 <tr><td><strong>audio misrouted — reload audio</strong> (red)</td><td>Their audio is playing to the wrong device</td><td><strong>reload</strong> on the audio plane</td></tr>
-<tr><td><strong>PGM</strong> (red) / <strong>PVW</strong> (green)</td><td>OBS has this guest live / in preview</td><td>Nothing — it's information</td></tr>
+<tr><td><strong>PGM</strong> (red) / <strong>PVW</strong> (green)</td><td>Your receiver has this guest live / in preview</td><td>Nothing; it's information. Only receivers that send NDI tally will light these</td></tr>
 <tr><td>Empty meter, RUNNING chips</td><td>Their mic is muted or silent</td><td>Ask them to check their mic</td></tr>
 </tbody>
 </table>
 <hr>
 <h2 id="shutting-down">Shutting down</h2>
 <p><strong>Stop everything</strong> stops all guests and the supervisor, and asks first.</p>
-<p>Closing the ECANDI window does <strong>not</strong> stop your show — the guests keep
-streaming and reopening ECANDI reconnects you to the running session. That is
+<p>Closing the ECANDI window does <strong>not</strong> stop your show. The guests keep
+streaming, and reopening ECANDI reconnects you to the running session. That is
 deliberate: the console can crash without taking your broadcast with it.</p>
 <hr>
 <h2 id="where-things-live">Where things live</h2>
@@ -211,9 +225,9 @@ deliberate: the console can crash without taking your broadcast with it.</p>
 </table>
 <p>Only the last one is removed when you uninstall.</p>
 <hr>
-<p>Next: <strong><a href="MANUAL.html">MANUAL.md</a></strong> — every control, every state, and what to do
-when something looks wrong.</p>
-<div class="foot">ECANDI documentation — generated from QUICKSTART.md by scripts/render-docs.js.
+<p>Next: <strong><a href="MANUAL.html">MANUAL.md</a></strong>, covering every control, every state, and what
+to do when something looks wrong.</p>
+<div class="foot">ECANDI documentation, generated from QUICKSTART.md by scripts/render-docs.js.
 NDI&reg; is a registered trademark of Vizrt NDI AB.</div>
 </div>
 </body>

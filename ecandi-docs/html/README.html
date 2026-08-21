@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ECANDI Introduction</title>
+<style>
+:root {
+  --bg:#0a0f1f; --panel:#111a30; --panel2:#182238; --border:#2c3a5c; --border-soft:#1f2b47;
+  --text:#e8ecf4; --muted:#93a1bd; --accent:#00e0e9; --accent2:#9b4dff; --code:#0d1526;
+}
+* { box-sizing: border-box; }
+body {
+  margin:0; color:var(--text);
+  background:
+    linear-gradient(168deg, rgba(83,10,138,.30) 0%, rgba(10,15,31,0) 34%),
+    radial-gradient(1300px 760px at 88% -18%, rgba(0,224,233,.17), transparent 60%),
+    radial-gradient(1000px 680px at -12% 118%, rgba(83,10,138,.42), transparent 62%),
+    var(--bg);
+  background-attachment: fixed;
+  font: 15px/1.65 -apple-system,'Segoe UI',system-ui,sans-serif;
+}
+.wrap { max-width: 860px; margin: 0 auto; padding: 34px 28px 90px; }
+h1 {
+  font-size:30px; letter-spacing:.5px; margin:0 0 6px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+h2 { font-size:21px; margin:38px 0 10px; padding-bottom:7px; border-bottom:1px solid var(--border-soft); }
+h3 { font-size:16.5px; margin:26px 0 8px; color:#cfe6ff; }
+p, li { color:var(--text); }
+a { color:var(--accent); text-decoration:none; border-bottom:1px solid rgba(0,224,233,.3); }
+a:hover { color:#03ffff; border-bottom-color:#03ffff; }
+code { background:var(--code); border:1px solid var(--border-soft); border-radius:5px;
+       padding:1px 5px; font:12.5px/1.5 ui-monospace,Consolas,monospace; color:#9fe8ee; }
+pre { background:var(--code); border:1px solid var(--border); border-radius:10px;
+      padding:14px 16px; overflow-x:auto; }
+pre code { background:none; border:0; padding:0; color:#b9c7e0; }
+table { border-collapse:separate; border-spacing:0; width:100%; margin:14px 0;
+        border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+th, td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--border-soft);
+         border-right:1px solid var(--border-soft); vertical-align:top; font-size:14px; }
+th { background:var(--panel2); font-weight:700; }
+tr:last-child td { border-bottom:0; }
+th:last-child, td:last-child { border-right:0; }
+blockquote { margin:16px 0; padding:10px 16px; border-left:3px solid var(--accent);
+             background:rgba(0,224,233,.06); border-radius:0 8px 8px 0; }
+blockquote p { margin:6px 0; color:var(--muted); }
+hr { border:0; border-top:1px solid var(--border-soft); margin:30px 0; }
+img { max-width:100%; border:1px solid var(--border); border-radius:10px; display:block; margin:14px 0; }
+.nav { display:flex; gap:10px; align-items:center; padding:10px 0 18px; border-bottom:1px solid var(--border-soft); margin-bottom:10px; }
+.nav a { padding:5px 14px; border:1px solid var(--border); border-radius:9999px;
+         background:#16203a; font-size:13.5px; font-weight:600; }
+.nav a:hover { border-color:var(--accent); box-shadow:0 0 10px rgba(0,224,233,.25); }
+.nav .here { border-color:var(--accent); color:#03ffff; }
+.foot { margin-top:44px; padding-top:14px; border-top:1px solid var(--border-soft);
+        color:var(--muted); font-size:12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="nav"><a href="README.html" class="here">Introduction</a><a href="QUICKSTART.html">Quick Start</a><a href="MANUAL.html">Manual</a></div>
+<h1 id="ecandi">ECANDI</h1>
+<p><strong>ECANDI takes the guests of a live show, joining from anywhere through a
+browser link, and turns each of them into two things your production can use
+independently: a named video stream on your network, and an audio feed you can
+place on its own channel.</strong></p>
+<p>That is the whole idea. Everything else in ECANDI exists to keep those two
+things reliable while a show is running.</p>
+<hr>
+<h2 id="what-problem-it-solves">What problem it solves</h2>
+<p>Getting several remote guests into a live production is easy to do badly. The
+usual approaches make every guest depend on the same fragile thing: one browser
+window holding everyone, one capture source, one audio device shared by all. It
+works until a guest's connection wobbles, or someone needs their microphone
+moved, and the fix disturbs everybody.</p>
+<p>ECANDI is built around the opposite assumption: <strong>something will go wrong with
+one guest, mid-show, and fixing them must cost nothing to anyone else.</strong></p>
+<p>So each guest gets:</p>
+<ul>
+<li><strong>Their own video stream</strong>, published on your network under a stable name, for any NDI receiver to subscribe to.</li>
+<li><strong>Their own audio feed</strong>, which you can place on a dedicated channel of a multi-channel device, so your mixer sees each guest as a separate input rather than one blended feed.</li>
+</ul>
+<p>These two travel entirely separate paths and never share state. Rebuilding a
+guest's audio does not touch their video. Rebuilding one guest does not touch
+any other. That independence is the product.</p>
+<hr>
+<h2 id="who-it-is-for">Who it is for</h2>
+<p>Someone running a recurring live show with remote participants who wants each
+participant under individual control (separate levels, separate treatment,
+separate framing) without babysitting a pile of browser windows.</p>
+<p>You do not need to be a developer. You do need to know what you want your video
+and audio to end up in: some NDI receiver, and some audio destination.</p>
+<hr>
+<h2 id="how-it-works-briefly">How it works, briefly</h2>
+<p>Guests join through <strong>vdo.ninja</strong> links, the same links you would send them
+anyway. ECANDI opens each guest twice behind the scenes: once for video only,
+once for audio only. The video side is rendered off-screen and published as NDI.
+The audio side is pointed at the playback device and channel you chose.</p>
+<p>You drive all of it from one window: a list of guests, live thumbnails proving
+each stream is really flowing, live meters proving each guest's audio really
+arrived, and per-guest controls.</p>
+<p>Two design decisions are worth knowing up front, because they explain how the
+app behaves:</p>
+<ul>
+<li><strong>Nothing is edited in place.</strong> Changing a guest's settings never mutates a running piece; ECANDI rebuilds exactly that piece from your saved configuration. This is why one change never has side effects on another guest.</li>
+<li><strong>The window is not the show.</strong> Closing the ECANDI console leaves everything streaming. Reopen it and you are reconnected to the running session. The console can crash without taking your broadcast with it.</li>
+</ul>
+<hr>
+<h2 id="what-you-need">What you need</h2>
+<p>Only one thing is strictly required: <strong>a vdo.ninja link for each guest.</strong></p>
+<p>Beyond that it depends on which half of ECANDI you want. To use the video side
+you need something on your network that receives NDI. To separate guests onto
+their own audio channels you need a multi-channel virtual audio device; without
+one, guests' audio simply plays out your normal playback device, mixed together.
+You can use either half on its own.</p>
+<p>The <strong><a href="QUICKSTART.html">Quick Start</a></strong> covers this properly, with the exact steps.</p>
+<hr>
+<h2 id="where-to-go-next">Where to go next</h2>
+<table>
+<thead><tr><th>If you want to</th><th>Read</th></tr></thead>
+<tbody>
+<tr><td>Get one guest working, start to finish</td><td><strong><a href="QUICKSTART.html">Quick Start</a></strong></td></tr>
+<tr><td>Understand every control, indicator, and failure state</td><td><strong><a href="MANUAL.html">Operator's Manual</a></strong></td></tr>
+<tr><td>Know what's bundled and under what licence</td><td><code>NOTICE.md</code>, beside the application</td></tr>
+</tbody>
+</table>
+<hr>
+<h2 id="a-note-on-names">A note on names</h2>
+<p>ECANDI is a fork of <strong>Electron Capture</strong> by Steve Seguin, and is distributed
+under the GNU General Public License v3.0.</p>
+<p>NDI® is a registered trademark of Vizrt NDI AB. ECANDI is not a product of
+Vizrt NDI AB and is not endorsed by them; NDI is named here only to say what
+ECANDI is compatible with.</p>
+<div class="foot">ECANDI documentation, generated from README.md by scripts/render-docs.js.
+NDI&reg; is a registered trademark of Vizrt NDI AB.</div>
+</div>
+</body>
+</html>
