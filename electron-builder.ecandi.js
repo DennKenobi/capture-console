@@ -23,6 +23,9 @@ const files = JSON.parse(JSON.stringify(win11.files));
 files[0].filter.push(
 	// Dev-tree launcher — retired as the primary path this session; dev only.
 	'!ECANDI.cmd',
+	// Upstream's README, preserved at the repo root for attribution but not
+	// app content (package.json's filter already drops our own README.md).
+	'!README.upstream.md',
 	// grandiose ships RUNTIME only: dist/index.js + grandiose.node + NDI DLL.
 	// The ndi/ SDK tree (fetched at install; headers + import libs), the local
 	// compile dirs, and dist's own include/lib copies are build-time — and the
