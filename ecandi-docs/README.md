@@ -70,6 +70,35 @@ app behaves:
 
 ---
 
+## What ECANDI is built on
+
+ECANDI exists because of two projects by **Steve Seguin**, and it is worth being
+plain about how much of the work is his.
+
+**[vdo.ninja](https://vdo.ninja)** is how the guests get here at all. It solves
+the genuinely hard part: getting live camera and microphone from someone's
+browser, anywhere in the world, into your machine over WebRTC, with no software
+for them to install and no account to make. Every guest in ECANDI arrives
+through a vdo.ninja link. ECANDI drives it only through its public, documented
+URL parameters; it never injects or patches anything inside the page.
+
+**[Electron Capture](https://github.com/steveseguin/electroncapture)** is the
+application ECANDI is a fork of. It contributes the window and capture
+foundation, and with it the custom Electron runtime Steve maintains, whose
+patches (near-lossless encoding, hardware encode, cursor suppression) ECANDI
+inherits and ships. The parts of ECANDI that quietly do not go wrong are mostly
+parts Electron Capture already got right.
+
+**What ECANDI adds** is narrow by comparison: it runs many guests at once
+instead of one window at a time, splits each of them into an independent video
+stream and audio channel, and puts a supervisor around the whole set so one
+guest can be rebuilt without disturbing the others. That is an addition to
+Steve's work, built on top of it, not a replacement for it.
+
+ECANDI is not affiliated with or endorsed by Steve Seguin or vdo.ninja.
+
+---
+
 ## What you need
 
 Only one thing is strictly required: **a vdo.ninja link for each guest.**
@@ -94,10 +123,11 @@ The **[Quick Start](QUICKSTART.md)** covers this properly, with the exact steps.
 
 ---
 
-## A note on names
+## Licensing and names
 
-ECANDI is a fork of **Electron Capture** by Steve Seguin, and is distributed
-under the GNU General Public License v3.0.
+ECANDI inherits Electron Capture's **GNU General Public License v3.0** and stays
+under it, with upstream attribution preserved. The full text ships as
+`LICENSE.md` beside the application, and `NOTICE.md` lists everything bundled.
 
 NDI® is a registered trademark of Vizrt NDI AB. ECANDI is not a product of
 Vizrt NDI AB and is not endorsed by them; NDI is named here only to say what

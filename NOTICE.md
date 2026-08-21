@@ -90,7 +90,16 @@ https://github.com/steveseguin/electron), which embeds **Chromium** and
 own licenses. Both license collections ship with this application as
 `LICENSE.electron.txt` and `LICENSES.chromium.html`.
 
-## VB-Audio, Dante, OBS, vdo.ninja
+## vdo.ninja
+
+ECANDI's guests connect through **vdo.ninja**, by **Steve Seguin**
+(https://vdo.ninja), which carries every guest's camera and microphone to this
+application over WebRTC. ECANDI bundles no part of it and drives it only through
+its public, documented URL parameters. vdo.ninja is operated and licensed by its
+author, independently of ECANDI, and ECANDI is not affiliated with or endorsed
+by it.
+
+## VB-Audio, Dante, OBS
 
 ECANDI interoperates with these systems but bundles no part of them. They are
 installed and licensed separately by their own vendors and projects, and their
