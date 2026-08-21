@@ -55,9 +55,11 @@ The same documents are available inside the app from the **Help** button.
 
 ## Installing
 
-Run `ECANDI-setup-1.0.0.exe`. It installs per user, needs no administrator
-rights, and asks nothing except where to put it. A portable build is also
-available and runs without installing.
+Run `ECANDI-setup-1.0.0.exe`. It asks who to install for: **Only for me**, the
+default, needs no administrator rights and lands in
+`%LOCALAPPDATA%\Programs\ECANDI`; **Anyone who uses this computer** installs to
+`%PROGRAMFILES%\ECANDI` for every account and asks for administrator approval.
+A portable build is also available and runs without installing.
 
 ECANDI v1 is not code-signed, so Windows SmartScreen will warn that the
 publisher is unknown.
@@ -67,7 +69,8 @@ native sender module, and the PowerShell helpers all ship inside the app.
 
 Your scenes live in `Documents\ECANDI\` and your settings in `%APPDATA%\ECANDI`,
 both outside the install directory, so upgrading and uninstalling leave them
-alone.
+alone. Those are per-user paths whichever install scope you pick, so a
+machine-wide install still gives every account its own scenes and settings.
 
 ---
 

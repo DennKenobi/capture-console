@@ -370,11 +370,14 @@ saved and the console tells you why.</p>
 <tr><td>Log</td><td><code>Documents\ECANDI\supervisor.log</code></td><td><strong>Yes</strong></td></tr>
 <tr><td>Worker profiles</td><td><code>Documents\ECANDI\.workers\</code></td><td><strong>Yes</strong></td></tr>
 <tr><td>Console settings (theme, window)</td><td><code>%APPDATA%\ECANDI</code></td><td><strong>Yes</strong></td></tr>
-<tr><td>The application</td><td><code>%LOCALAPPDATA%\Programs\ECANDI</code></td><td>No; this is what gets removed</td></tr>
+<tr><td>The application</td><td><code>%LOCALAPPDATA%\Programs\ECANDI</code>, or <code>%PROGRAMFILES%\ECANDI</code> if installed for all users</td><td>No; this is what gets removed</td></tr>
 </tbody>
 </table>
 <p>Upgrading ECANDI replaces only the last row. Your scenes, logs, and settings are
 untouched by both upgrade and uninstall.</p>
+<p>Everything above the last row is per-user regardless of how ECANDI was
+installed. If it was installed for all users, the program is shared but each
+account still keeps its own scenes, logs, and settings.</p>
 <p>Alongside the app you'll also find <code>NOTICE.md</code> (licensing and the NDI terms that
 travel with the software) and <code>LICENSE.md</code> (ECANDI is GPL-3.0, derived from
 Steve Seguin's Electron Capture).</p>

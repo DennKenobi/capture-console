@@ -134,11 +134,16 @@ module.exports = {
 		// only fills in the Add/Remove Programs fields electron-builder leaves
 		// blank, so Windows can show the install location and size.
 		include: 'build/ecandi-installer.nsh',
-		// Per-user install, no elevation (SESSION11-SPEC §1). perMachine:false +
-		// allowElevation:false pins it: no UAC prompt, no install-mode page, lands
-		// in %LOCALAPPDATA%\Programs\ECANDI.
+		// Install scope is the OPERATOR'S CHOICE (Dennis, 2026-08-21). perMachine
+		// false makes "Only for me" the DEFAULT, so SESSION11-SPEC §1's "per-user,
+		// no elevation" still holds for anyone who just clicks through: no UAC.
+		// allowElevation true un-greys "Anyone who uses this computer", which
+		// installs to Program Files and registers in HKLM so every account sees it.
+		// Either way the operator's DATA stays per-user: scenes come from
+		// app.getPath('documents') and settings from userData, both of which are
+		// always the current user's folders whatever the install scope.
 		perMachine: false,
-		allowElevation: false,
+		allowElevation: true,
 		// Shortcuts (Start menu + desktop) read ECANDI, not the package name.
 		shortcutName: 'ECANDI',
 		uninstallDisplayName: 'ECANDI ${version}',

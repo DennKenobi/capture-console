@@ -93,9 +93,15 @@ you nothing on the other.</p>
 <p>Run <strong><code>ECANDI-setup-1.0.0.exe</code></strong>.</p>
 <ul>
 <li>Windows SmartScreen will warn you that the publisher is unknown. ECANDI v1 is not code-signed. Choose <strong>More info → Run anyway</strong>.</li>
-<li>The installer asks nothing except where to put it. It installs <strong>just for you</strong>, with no administrator prompt and no elevation.</li>
-<li>Default location: <code>C:\Users\&lt;you&gt;\AppData\Local\Programs\ECANDI</code></li>
+<li>The first page asks <strong>who to install for</strong>:</li>
+<li><strong>Only for me</strong> (the default) needs no administrator rights and no UAC prompt. It installs to <code>C:\Users\&lt;you&gt;\AppData\Local\Programs\ECANDI</code>.</li>
+<li><strong>Anyone who uses this computer</strong> installs to <code>C:\Program Files\ECANDI</code> so every account on the machine gets it. Windows will ask for administrator approval.</li>
+<li>After that it only asks where to put it.</li>
 </ul>
+<p>Either choice keeps your own work yours: scenes always live in your
+<code>Documents\ECANDI\</code> folder and settings in your <code>%APPDATA%\ECANDI</code>, so on a
+shared machine each person has their own guests and their own settings even
+when the program itself is installed once for everybody.</p>
 <p>You get <strong>ECANDI</strong> in the Start menu and on the desktop. Nothing else needs
 installing. The custom Electron runtime, the NDI runtime, the native sender
 module, and the PowerShell helpers all ship inside the app.</p>
