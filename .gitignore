@@ -1,5 +1,6 @@
 /build
 /dist
+/dist-release
 /node_modules
 /certs
 /build-config.env
