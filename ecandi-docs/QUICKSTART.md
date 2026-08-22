@@ -92,22 +92,25 @@ dropping the ones it manages itself.
 
 ![Pasting a guest link](images/02-add-player.png)
 
-Then set three things:
+**Only one field is required:**
 
-1. **Name.** How this guest appears everywhere: in the console, in the NDI
-   stream name, and wherever you subscribe to it. Use something short and
-   real: `Alice`.
-2. **Audio output device.** Where this guest's audio should play. The dropdown
-   lists every playback device on the machine with its channel count, so a
-   multi-channel one is easy to spot. Leave it blank to use your normal
-   playback device.
-3. **Channel offset.** Which channel this guest's audio lands on, counting
-   from **0**. Offset `0` is channel 1, offset `1` is channel 2, and so on.
-   Give every guest their own. Leave it blank if you are not separating guests
-   onto channels.
+**Name.** How this guest appears everywhere: in the console, in the NDI stream
+name, and wherever you subscribe to it. Use something short and real: `Alice`.
 
-Leave Width, Height, and FPS blank unless you have a reason. Blank means
-1920×1080 at 30 fps, which is what most shows want.
+That is genuinely all. Leave every other field blank and you get a working
+guest: their video goes out as an NDI stream, and their audio plays out your
+normal playback device like any other application's sound. Blank Width, Height
+and FPS mean 1920x1080 at 30 fps, which is what most shows want.
+
+**Only if you are giving each guest their own audio channel**, set these two as
+well:
+
+- **Audio output device.** The multi-channel device their audio should play to.
+  The dropdown lists every playback device on the machine with its channel
+  count, so the multi-channel one is easy to spot.
+- **Channel offset.** Which channel this guest lands on, counting from **0**.
+  Offset `0` is channel 1, offset `1` is channel 2, and so on. Give every guest
+  their own.
 
 Watch the three lines under the form as you type. They show the exact URLs and
 NDI name ECANDI will use. The whole configuration is visible before you commit
