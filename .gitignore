@@ -31,3 +31,6 @@ mac.sh
 !/code-signing-cert.pem
 /*.pfx
 /npm-debug.log*
+
+# Engineering ledger: local only, deliberately never published (see ECANDI-LEDGER.md one level up)
+CLAUDE.md
